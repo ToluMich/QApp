@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { AlertTriangle, Check, ChevronRight, CircleDot, Clock3, Copy, Download, FileSpreadsheet, LogOut, Search, ShieldCheck, Sparkles, Trash2, Users, X } from 'lucide-react'
+import { AlertTriangle, Check, ChevronRight, CircleDot, Clock3, Copy, Download, FileSpreadsheet, LogOut, QrCode, Search, Share2, ShieldCheck, Sparkles, Trash2, Users, X } from 'lucide-react'
+import QRCode from 'qrcode'
 import { apiCall, ensureAnonymousSession, isSupabaseConfigured, supabase } from './supabase'
 import './App.css'
 import './theme.css'
@@ -13,10 +14,10 @@ function Brand() {
 
 function Nav({ view, navigate, session, logout }) {
   const links = session?.role === 'admin'
-    ? [['ask', 'Ask a question'], ['mod', 'Moderator'], ['admin', 'Questions'], ['team', 'Team management']]
+    ? [['ask', 'Ask a question'], ['mod', 'Moderator'], ['admin', 'Questions'], ['team', 'Team management'], ['qr', 'QR Studio']]
     : session?.role === 'moderator'
       ? [['ask', 'Ask a question'], ['mod', 'Moderator']]
-      : [['ask', 'Ask a question']]
+      : []
   return <nav className="topbar">
     <Brand />
     <div className="nav-actions">
@@ -25,6 +26,119 @@ function Nav({ view, navigate, session, logout }) {
       {session && <button className="icon-button" aria-label="Sign out" onClick={logout}><LogOut size={18} /></button>}
     </div>
   </nav>
+}
+
+function QrStudio() {
+  const [value, setValue] = useState('')
+  const [qrImage, setQrImage] = useState('')
+  const [status, setStatus] = useState('')
+  const [statusType, setStatusType] = useState('info')
+  const [generating, setGenerating] = useState(false)
+
+  const generate = async event => {
+    event.preventDefault()
+    const content = value.trim()
+    if (!content || generating) return
+    setGenerating(true)
+    setStatus('')
+    try {
+      const image = await QRCode.toDataURL(content, {
+        errorCorrectionLevel: 'M',
+        margin: 2,
+        width: 1024,
+        color: { dark: '#211C3A', light: '#FFFFFF' },
+      })
+      setQrImage(image)
+    } catch (error) {
+      setQrImage('')
+      setStatusType('error')
+      setStatus(error.message?.includes('too big')
+        ? 'This content is too long for a QR code. Shorten it and try again.'
+        : 'Could not generate a QR code from this content. Please try again.')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const download = () => {
+    if (!qrImage) return
+    const link = document.createElement('a')
+    link.href = qrImage
+    link.download = `micme-qr-${new Date().toISOString().slice(0, 10)}.png`
+    document.body.append(link)
+    link.click()
+    link.remove()
+  }
+
+  const share = async () => {
+    if (!qrImage) return
+    try {
+      const response = await fetch(qrImage)
+      const imageFile = new File([await response.blob()], 'micme-qr.png', { type: 'image/png' })
+      if (!navigator.share || !navigator.canShare?.({ files: [imageFile] })) {
+        setStatusType('warning')
+        setStatus('This browser cannot share QR images directly. Download the PNG and share it from your device.')
+        return
+      }
+      await navigator.share({ title: 'MicMe QR code', files: [imageFile] })
+      setStatusType('success')
+      setStatus('QR code shared.')
+    } catch (error) {
+      if (error.name === 'AbortError') return
+      setStatusType('error')
+      setStatus('Could not share the QR code. You can download it instead.')
+    }
+  }
+
+  const clear = () => {
+    setValue('')
+    setQrImage('')
+    setStatus('')
+  }
+
+  return <main className="dashboard qr-dashboard">
+    <header className="dashboard-head">
+      <div><p className="eyebrow"><QrCode size={15} /> Admin tools</p><h1>QR Studio</h1><p className="qr-intro">Turn a link, message, or any text into a shareable QR code.</p></div>
+    </header>
+    <div className="qr-layout">
+      <section className="qr-editor">
+        <form onSubmit={generate}>
+          <label htmlFor="qr-content">What should this QR code contain?</label>
+          <textarea id="qr-content" className="qr-input" value={value} maxLength={2500} disabled={generating} onChange={event => {
+            setValue(event.target.value)
+            setQrImage('')
+            setStatus('')
+          }} placeholder="Paste a URL or type any text..." />
+          <div className="qr-form-footer">
+            <span>{value.length}/2500 characters</span>
+            <div>
+              <button type="button" className="secondary-button" onClick={clear} disabled={!value && !qrImage}>Clear</button>
+              <button className="primary-button" disabled={!value.trim() || generating}>
+                <QrCode size={17} /> {generating ? 'Generating...' : 'Generate QR code'}
+              </button>
+            </div>
+          </div>
+        </form>
+        <div className="qr-privacy"><ShieldCheck size={18} /><p><strong>Private by design</strong><span>Your content is processed in this browser only. MicMe does not upload or save it.</span></p></div>
+        {status && <div className={`notice ${statusType}`} role="status">{status}</div>}
+      </section>
+      <section className={`qr-preview ${qrImage ? 'has-qr' : ''}`} aria-live="polite">
+        {qrImage ? <>
+          <div className="qr-preview-image"><img src={qrImage} alt="QR code for the entered content" /></div>
+          <h2>Your QR code is ready</h2>
+          <p>Scan it with a phone camera to open the encoded content.</p>
+          <div className="qr-actions">
+            <button className="primary-button" onClick={download}><Download size={17} /> Download PNG</button>
+            <button className="secondary-button" onClick={share}><Share2 size={17} /> Share QR</button>
+          </div>
+        </> : <>
+          <div className="qr-empty-icon"><QrCode size={46} /></div>
+          <h2>Your QR code will appear here</h2>
+          <p>Enter your content, then select <strong>Generate QR code</strong>.</p>
+        </>}
+      </section>
+    </div>
+  </main>
 }
 
 function SubmissionDialog({ result, onClose }) {
@@ -549,7 +663,8 @@ function AdminPortal() {
 function App() {
   const initialView = window.location.hash === '#/moderator' ? 'mod'
     : window.location.hash === '#/admin' ? 'admin'
-      : window.location.hash === '#/team' ? 'team' : 'ask'
+      : window.location.hash === '#/team' ? 'team'
+        : window.location.hash === '#/qr' ? 'qr' : 'ask'
   const [view, setView] = useState(initialView)
   const [session, setSession] = useState(null)
   const [ready, setReady] = useState(!isSupabaseConfigured)
@@ -577,13 +692,15 @@ function App() {
     const handleHashChange = () => {
       setView(window.location.hash === '#/moderator' ? 'mod'
         : window.location.hash === '#/admin' ? 'admin'
-          : window.location.hash === '#/team' ? 'team' : 'ask')
+          : window.location.hash === '#/team' ? 'team'
+            : window.location.hash === '#/qr' ? 'qr' : 'ask')
     }
     window.addEventListener('hashchange', handleHashChange)
     return () => window.removeEventListener('hashchange', handleHashChange)
   }, [])
   const navigate = nextView => {
-    const hash = nextView === 'mod' ? '#/moderator' : nextView === 'admin' ? '#/admin' : nextView === 'team' ? '#/team' : ''
+    const hash = nextView === 'mod' ? '#/moderator' : nextView === 'admin' ? '#/admin'
+      : nextView === 'team' ? '#/team' : nextView === 'qr' ? '#/qr' : ''
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${hash}`)
     setView(nextView)
   }
@@ -595,11 +712,17 @@ function App() {
     navigate('ask')
   }
   const portalContent = session?.role === 'admin'
-    ? view === 'team' ? <AdminPortal /> : view === 'admin' ? <QuestionList role="admin" /> : null
+    ? view === 'team' ? <AdminPortal /> : view === 'admin' ? <QuestionList role="admin" /> : view === 'qr' ? <QrStudio /> : null
     : session?.role === 'moderator' && view === 'mod' ? <QuestionList role="moderator" /> : null
-  const loginRole = view === 'admin' || view === 'team' ? 'admin' : 'moderator'
-  const showLogin = (view === 'admin' || view === 'team' || view === 'mod') && session?.role !== loginRole
-  if (!ready) return <div className="app-shell app-loading">Connecting to MicMe…</div>
+  const loginRole = view === 'admin' || view === 'team' || view === 'qr' ? 'admin' : 'moderator'
+  const showLogin = (view === 'admin' || view === 'team' || view === 'mod' || view === 'qr') && session?.role !== loginRole
+  if (!ready) return <main className="app-loading" role="status" aria-label="Loading MicMe">
+    <div className="background-grid" aria-hidden="true" />
+    <div className="loading-mark">
+      <span className="loading-orbit" aria-hidden="true" />
+      <img src="/micme-logo.svg" alt="MicMe" />
+    </div>
+  </main>
   if (startupError) return <main className="auth-page"><section className="auth-card"><div className="auth-icon"><ShieldCheck /></div><h2>Supabase setup needed</h2><p>{startupError}</p><p>After configuration, restart the local app with <code>npm.cmd run dev</code>.</p></section></main>
   return <div className="app-shell">
     <div className="background-grid" />

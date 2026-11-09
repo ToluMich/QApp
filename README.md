@@ -30,6 +30,8 @@ MicMe is a React/Vite frontend backed entirely by Supabase: Postgres stores ques
 
 For later backend updates, run `npx supabase db push --remote` to apply new migrations, then redeploy `qroom-api` when its source changes. Moderator names are unique regardless of capitalization, and admin activity logs stream live through Supabase Realtime. The admin interface supports deleting individual moderators, permanently deleting all questions, and exporting all or selected questions to an Excel-readable `.xls` workbook. Destructive actions require confirmation.
 
+Admins can also open **QR Studio** to generate PNG QR codes for arbitrary text or URLs. QR content is encoded in the browser only; it is not sent to Supabase or stored by MicMe. The image can be downloaded or shared through the browser's native file-sharing support.
+
 Never put the service-role key, admin PIN, or PIN index secret in the React `.env.local` or in source control. The frontend only needs the public Supabase URL and publishable/anon key.
 
 ## Run locally
