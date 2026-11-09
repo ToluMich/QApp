@@ -7,8 +7,8 @@ MicMe is a React/Vite frontend backed entirely by Supabase: Postgres stores ques
 1. Create a Supabase project at https://supabase.com/dashboard. Keep the project URL and publishable/anon key available.
 2. In **Authentication → Sign In / Providers**, enable **Anonymous Sign-Ins**.
 3. In the project root, copy `.env.example` to `.env.local` and set:
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
+   - `SUPABASE_URL`
+   - `SUPABASE_ANON_KEY`
 4. Sign in to the Supabase CLI:
    ```powershell
    npx supabase login
@@ -45,4 +45,4 @@ Open the localhost URL Vite prints. The frontend talks directly to Supabase. Ano
 
 ## Deploy the frontend later
 
-Deploy the Vite app to Vercel and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as Vercel environment variables. Supabase remains the backend; there is no Apps Script or Firebase runtime dependency.
+Deploy the Vite app to Vercel and set `SUPABASE_URL` and `SUPABASE_ANON_KEY` as Vercel environment variables before building. Vite exposes only these two values to the client bundle; use the public anon/publishable key, never a service-role key. Supabase remains the backend; there is no Apps Script or Firebase runtime dependency.

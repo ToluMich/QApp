@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+const supabaseUrl = import.meta.env.SUPABASE_URL
+const supabaseAnonKey = import.meta.env.SUPABASE_ANON_KEY
 
 export const isSupabaseConfigured = Boolean(
   supabaseUrl
@@ -25,7 +25,7 @@ export const supabase = createClient(
 let anonymousSessionPromise
 
 export async function ensureAnonymousSession() {
-  if (!isSupabaseConfigured) throw new Error('Configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.local.')
+  if (!isSupabaseConfigured) throw new Error('Configure SUPABASE_URL and SUPABASE_ANON_KEY in .env.local.')
   const { data: { session } } = await supabase.auth.getSession()
   if (session) {
     if (session.access_token) await supabase.realtime.setAuth(session.access_token)
