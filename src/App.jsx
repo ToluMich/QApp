@@ -8,6 +8,10 @@ import './theme.css'
 
 const statusText = { unanswered: 'Awaiting answer', answered: 'Answered' }
 
+function reportError(context, error) {
+  console.error(`[MicMe] ${context}`, error)
+}
+
 function Brand() {
   return <div className="brand"><img className="brand-mark" src="/micme-logo.svg" alt="" /><span className="brand-name">MicMe</span></div>
 }
@@ -21,7 +25,9 @@ function Nav({ view, navigate, session, logout }) {
   return <nav className="topbar">
     <Brand />
     <div className="nav-actions">
-      {links.map(([key, label]) => <button key={key} className={view === key ? 'nav-link active' : 'nav-link'} onClick={() => navigate(key)}>{label}</button>)}
+      <div className={`nav-links ${links.length === 2 ? 'compact' : ''}`}>
+        {links.map(([key, label]) => <button key={key} className={view === key ? 'nav-link active' : 'nav-link'} onClick={() => navigate(key)}>{label}</button>)}
+      </div>
       {session && <div className="nav-identity"><strong>{session.name}</strong><span>{session.role}</span></div>}
       {session && <button className="icon-button" aria-label="Sign out" onClick={logout}><LogOut size={18} /></button>}
     </div>
@@ -233,14 +239,17 @@ function PinLogin({ role, onLogin }) {
     try {
       const result = await apiCall(role === 'admin' ? 'loginAdmin' : 'loginModerator', { pin })
       onLogin({ role, name: result.name })
-    } catch (e) { setError(e.message || 'Sign in failed. Check your PIN.') }
+    } catch (error) {
+      reportError('Sign-in failed', error)
+      setError('We couldn’t sign you in. Check your PIN and try again.')
+    }
     finally { setLoading(false) }
   }
   return <main className="auth-page"><form className="auth-card" onSubmit={submit}>
     <div className="auth-icon">{role === 'admin' ? <ShieldCheck /> : <Users />}</div>
     <p className="eyebrow centered">{role === 'admin' ? 'Administration' : 'Moderator access'}</p>
     <h2>{role === 'admin' ? 'Welcome, admin' : 'Enter workspace'}</h2>
-    <label htmlFor={`${role}-pin`}>6-digit PIN</label>
+    <label htmlFor={`${role}-pin`}>Access code</label>
     <input id={`${role}-pin`} className="pin-input" type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} placeholder="••••••" value={pin}
       onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))} />
     {error && <div className="notice error">{error}</div>}
@@ -281,7 +290,8 @@ function QuestionList({ role }) {
     }).catch(error => {
       if (active) {
         setActionMessageType('error')
-        setActionMessage(error.message || 'Could not load questions.')
+        reportError('Could not load questions', error)
+        setActionMessage('Questions could not be loaded. Please try again.')
       }
     })
     const channel = supabase.channel(`qroom-questions-${role}`)
@@ -304,7 +314,7 @@ function QuestionList({ role }) {
       .subscribe(status => {
         if (status === 'CHANNEL_ERROR' && active) {
           setActionMessageType('warning')
-          setActionMessage('Live updates could not connect. Check your Supabase Realtime setup.')
+          setActionMessage('Live updates are temporarily unavailable. Please refresh to try again.')
         }
       })
     return () => {
@@ -438,15 +448,17 @@ function QuestionList({ role }) {
       try {
         setQuestions(await loadQuestions())
       } catch (error) {
+        reportError('Could not refresh questions after deletion', error)
         setActionMessageType('warning')
-        setActionMessage(`Deleted ${result.deleted ?? 0} questions, but could not refresh the list: ${error.message}`)
+        setActionMessage(`Deleted ${result.deleted ?? 0} questions, but the list could not be refreshed. Please refresh the page.`)
         return
       }
       setActionMessageType('success')
       setActionMessage(`Deleted ${result.deleted ?? 0} question${result.deleted === 1 ? '' : 's'}.`)
     } catch (error) {
+      reportError('Could not delete questions', error)
       setActionMessageType('error')
-      setActionMessage(error.message || 'Could not delete questions.')
+      setActionMessage('Questions could not be deleted. Please try again.')
     } finally {
       setBusy('')
     }
@@ -458,8 +470,9 @@ function QuestionList({ role }) {
       setActionMessageType('success')
       setActionMessage('Question updated.')
     } catch (error) {
+      reportError('Could not update question', error)
       setActionMessageType('error')
-      setActionMessage(error.message || 'Could not update question.')
+      setActionMessage('The question could not be updated. Please try again.')
     }
     finally { setBusy('') }
   }
@@ -541,7 +554,11 @@ function AdminPortal() {
   const [saving, setSaving] = useState(false)
   const [linkMessage, setLinkMessage] = useState('')
   const copyModeratorLink = async () => {
-    const link = `${window.location.origin}${window.location.pathname}#/moderator`
+    const url = new URL(window.location.href)
+    url.searchParams.set('portal', 'moderator')
+    url.searchParams.delete('view')
+    url.hash = ''
+    const link = url.toString()
     try {
       await navigator.clipboard.writeText(link)
       setLinkMessage('Moderator access link copied.')
@@ -555,8 +572,9 @@ function AdminPortal() {
       setModerators(result.moderators || [])
       setLogs(result.logs || [])
     } catch (error) {
+      reportError('Could not load admin data', error)
       setMessageType('error')
-      setMessage(error.message || 'Could not load admin data.')
+      setMessage('Team information could not be loaded. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -591,7 +609,7 @@ function AdminPortal() {
       setMessage(result.pin ? `Created ${result.name}. Initial PIN: ${result.pin}` : 'Moderator created.')
       await refresh()
       if (result.pin) setMessage(`Created ${result.name}. Initial PIN: ${result.pin}`)
-    } catch (error) { setMessageType('error'); setMessage(error.message || 'Could not create moderator.') }
+    } catch (error) { reportError('Could not create moderator', error); setMessageType('error'); setMessage('The moderator could not be created. Please try again.') }
     finally { setSaving(false) }
   }
   const toggle = async moderator => {
@@ -604,7 +622,7 @@ function AdminPortal() {
       setMessageType(moderator.active ? 'warning' : 'success')
       setMessage(`${moderator.name} is now ${moderator.active ? 'inactive' : 'active'}.`)
       await refresh()
-    } catch (error) { setMessageType('error'); setMessage(error.message || 'Could not update moderator.') }
+    } catch (error) { reportError('Could not update moderator', error); setMessageType('error'); setMessage('The moderator could not be updated. Please try again.') }
     finally { setSaving(false) }
   }
   const resetPin = async moderator => {
@@ -618,7 +636,7 @@ function AdminPortal() {
       setMessage(`A new PIN was generated for ${moderator.name}.`)
       if (result.pin) window.prompt(`New PIN for ${moderator.name}`, result.pin)
       await refresh()
-    } catch (error) { setMessageType('error'); setMessage(error.message || 'Could not generate a new PIN.') }
+    } catch (error) { reportError('Could not generate a new PIN', error); setMessageType('error'); setMessage('A new PIN could not be generated. Please try again.') }
     finally { setSaving(false) }
   }
   const deleteModerator = async moderator => {
@@ -632,8 +650,9 @@ function AdminPortal() {
       setMessage(`${moderator.name} was deleted.`)
       await refresh()
     } catch (error) {
+      reportError('Could not delete moderator', error)
       setMessageType('error')
-      setMessage(error.message || 'Could not delete moderator.')
+      setMessage('The moderator could not be deleted. Please try again.')
     } finally { setSaving(false) }
   }
   const toggleAll = async active => {
@@ -646,7 +665,7 @@ function AdminPortal() {
       setMessageType(active ? 'success' : 'warning')
       setMessage(active ? 'All moderators are active.' : 'All moderators are inactive.')
       await refresh()
-    } catch (error) { setMessageType('error'); setMessage(error.message || 'Could not update moderators.') }
+    } catch (error) { reportError('Could not update moderators', error); setMessageType('error'); setMessage('Moderators could not be updated. Please try again.') }
     finally { setSaving(false) }
   }
   return <main className="dashboard admin-dashboard">
@@ -661,19 +680,36 @@ function AdminPortal() {
 }
 
 function App() {
-  const initialView = window.location.hash === '#/moderator' ? 'mod'
-    : window.location.hash === '#/admin' ? 'admin'
-      : window.location.hash === '#/team' ? 'team'
-        : window.location.hash === '#/qr' ? 'qr' : 'ask'
+  const getPortalFromUrl = () => {
+    const portals = new URLSearchParams(window.location.search).getAll('portal')
+    return portals.length === 1 && (portals[0] === 'admin' || portals[0] === 'moderator')
+      ? portals[0]
+      : null
+  }
+  const getViewFromUrl = () => {
+    const params = new URLSearchParams(window.location.search)
+    const portal = getPortalFromUrl()
+    if (portal === 'moderator') return 'mod'
+    if (portal === 'admin') {
+      const page = params.get('view')
+      return page === 'team' || page === 'qr' ? page : 'admin'
+    }
+    return 'ask'
+  }
+  const initialView = getViewFromUrl()
   const [view, setView] = useState(initialView)
   const [session, setSession] = useState(null)
+  const [globalError, setGlobalError] = useState('')
   const [ready, setReady] = useState(!isSupabaseConfigured)
   const [startupError, setStartupError] = useState(
-    isSupabaseConfigured ? '' : 'Create a Supabase project and add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env.local.',
+    isSupabaseConfigured ? '' : 'MicMe is having trouble connecting. Please try again in a moment.',
   )
   useEffect(() => {
     let active = true
-    if (!isSupabaseConfigured) return () => { active = false }
+    if (!isSupabaseConfigured) {
+      reportError('Application configuration is unavailable', new Error('Backend configuration is missing.'))
+      return () => { active = false }
+    }
     ensureAnonymousSession()
       .then(async () => {
         const result = await apiCall('getSession')
@@ -681,35 +717,59 @@ function App() {
       })
       .catch(error => {
         if (active) {
-          console.error('Supabase initialization failed:', error)
-          setStartupError(error.message || 'Could not connect to Supabase.')
+          reportError('Application initialization failed', error)
+          setStartupError('MicMe is having trouble connecting. Please try again in a moment.')
         }
       })
       .finally(() => { if (active) setReady(true) })
     return () => { active = false }
   }, [])
   useEffect(() => {
-    const handleHashChange = () => {
-      setView(window.location.hash === '#/moderator' ? 'mod'
-        : window.location.hash === '#/admin' ? 'admin'
-          : window.location.hash === '#/team' ? 'team'
-            : window.location.hash === '#/qr' ? 'qr' : 'ask')
+    const params = new URLSearchParams(window.location.search)
+    if (params.has('portal') && !getPortalFromUrl()) {
+      params.delete('portal')
+      params.delete('view')
+      const query = params.toString()
+      window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`)
     }
-    window.addEventListener('hashchange', handleHashChange)
-    return () => window.removeEventListener('hashchange', handleHashChange)
+    const handlePopState = () => {
+      setView(getViewFromUrl())
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
   }, [])
   const navigate = nextView => {
-    const hash = nextView === 'mod' ? '#/moderator' : nextView === 'admin' ? '#/admin'
-      : nextView === 'team' ? '#/team' : nextView === 'qr' ? '#/qr' : ''
-    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${hash}`)
+    const params = new URLSearchParams(window.location.search)
+    if (nextView === 'ask') {
+      params.delete('portal')
+      params.delete('view')
+    } else if (nextView === 'mod') {
+      params.set('portal', 'moderator')
+      params.delete('view')
+    } else {
+      params.set('portal', 'admin')
+      if (nextView === 'team' || nextView === 'qr') params.set('view', nextView)
+      else params.delete('view')
+    }
+    const query = params.toString()
+    const nextUrl = `${window.location.pathname}${query ? `?${query}` : ''}`
+    if (nextUrl !== `${window.location.pathname}${window.location.search}`) {
+      window.history.pushState(null, '', nextUrl)
+    }
     setView(nextView)
   }
   const logout = async () => {
-    await apiCall('logout')
-    await supabase.auth.signOut()
-    await ensureAnonymousSession()
-    setSession(null)
-    navigate('ask')
+    try {
+      await apiCall('logout')
+      await supabase.auth.signOut()
+      await ensureAnonymousSession()
+      setSession(null)
+      setGlobalError('')
+      navigate('ask')
+    } catch (error) {
+      reportError('Could not sign out', error)
+      setGlobalError('We couldn’t complete that request. Please try again.')
+    }
   }
   const portalContent = session?.role === 'admin'
     ? view === 'team' ? <AdminPortal /> : view === 'admin' ? <QuestionList role="admin" /> : view === 'qr' ? <QrStudio /> : null
@@ -723,10 +783,11 @@ function App() {
       <img src="/micme-logo.svg" alt="MicMe" />
     </div>
   </main>
-  if (startupError) return <main className="auth-page"><section className="auth-card"><div className="auth-icon"><ShieldCheck /></div><h2>Supabase setup needed</h2><p>{startupError}</p><p>After configuration, restart the local app with <code>npm.cmd run dev</code>.</p></section></main>
+  if (startupError) return <main className="auth-page"><section className="auth-card"><div className="auth-icon"><ShieldCheck /></div><h2>We’re having trouble connecting</h2><p>{startupError}</p></section></main>
   return <div className="app-shell">
     <div className="background-grid" />
     <Nav view={view} navigate={navigate} session={session} logout={logout} />
+    {globalError && <div className="notice error global-notice" role="alert">{globalError}</div>}
     {showLogin ? <PinLogin role={loginRole} onLogin={setSession} /> : view === 'ask' ? <AskPage /> : portalContent}
   </div>
 }
