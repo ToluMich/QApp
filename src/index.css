@@ -2,7 +2,7 @@
 
 :root {
   font-family: 'Plus Jakarta Sans', sans-serif;
-  color: #202827;
+  color: #20243a;
   background: #fff;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -11,4 +11,4 @@
 body { margin: 0; min-width: 320px; min-height: 100vh; }
 button, input, textarea { font: inherit; }
 button { cursor: pointer; }
-button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid rgba(53, 88, 200, .22); outline-offset: 2px; }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid rgba(79, 70, 229, .22); outline-offset: 2px; }

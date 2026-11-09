@@ -1,9 +1,9 @@
 :root {
-  --brand: #3558c8;
-  --brand-dark: #2845a8;
-  --brand-soft: rgba(53, 88, 200, .08);
-  --brand-teal: #159b98;
-  --brand-teal-soft: rgba(21, 155, 152, .1);
+  --brand: #4f46e5;
+  --brand-dark: #3730a3;
+  --brand-soft: rgba(79, 70, 229, .09);
+  --brand-coral: #ec4899;
+  --brand-coral-soft: rgba(236, 72, 153, .12);
   --purple: var(--brand);
   --purple-dark: var(--brand-dark);
   --ink: #20243a;
@@ -21,8 +21,17 @@
   --info-soft: #edf5ff;
 }
 
+@keyframes buttonFloat {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+@keyframes gridDrift {
+  to { background-position: 52px 52px, 52px 52px; }
+}
+
 .question-item:focus-visible {
-  outline: 3px solid rgba(53, 88, 200, .24);
+  outline: 3px solid rgba(79, 70, 229, .24);
   outline-offset: 3px;
 }
 
@@ -51,7 +60,7 @@
   border: 1px solid rgba(255, 255, 255, .86);
   border-radius: clamp(24px, 4vw, 40px);
   background:
-    radial-gradient(circle at 100% 0, rgba(21, 155, 152, .08), transparent 35%),
+    radial-gradient(circle at 100% 0, rgba(236, 72, 153, .1), transparent 35%),
     #fff;
   box-shadow: 0 24px 80px rgba(0, 0, 0, .2);
   transform-origin: center;
@@ -165,7 +174,7 @@ button, input, textarea {
 }
 
 button:focus-visible, input:focus-visible, textarea:focus-visible {
-  outline: 3px solid rgba(53, 88, 200, .22);
+  outline: 3px solid rgba(79, 70, 229, .22);
   outline-offset: 3px;
 }
 
@@ -173,7 +182,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   isolation: isolate;
   background:
     radial-gradient(ellipse at 2% 48%, rgba(0, 0, 0, .025), transparent 34%),
-    radial-gradient(ellipse at 95% 8%, rgba(21, 155, 152, .07), transparent 32%),
+    radial-gradient(ellipse at 95% 8%, rgba(236, 72, 153, .09), transparent 32%),
     #fff;
 }
 
@@ -198,6 +207,16 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   font-family: 'Space Grotesk', sans-serif;
   color: var(--ink);
   letter-spacing: -.9px;
+  gap: 11px;
+}
+
+.brand-name {
+  color: transparent;
+  background: linear-gradient(100deg, #3730a3 2%, #4f46e5 50%, #db2777 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  font-size: 23px;
+  font-weight: 800;
 }
 
 .brand > span:last-child > span {
@@ -206,15 +225,19 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 
 .brand-mark {
   border-radius: 13px;
-  background: linear-gradient(145deg, var(--brand), var(--brand-teal));
-  box-shadow: 0 8px 18px rgba(53, 88, 200, .2);
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  border-radius: 13px;
+  background: transparent;
+  box-shadow: 0 9px 22px rgba(79, 70, 229, .18);
   transform: perspective(140px) rotateY(-12deg) rotateX(7deg);
   transition: transform .35s ease, box-shadow .35s ease;
 }
 
 .brand:hover .brand-mark {
   transform: perspective(140px) rotateY(0) rotateX(0) translateY(-2px);
-  box-shadow: 0 12px 24px rgba(53, 88, 200, .24);
+  box-shadow: 0 13px 27px rgba(79, 70, 229, .26);
 }
 
 .nav-actions {
@@ -291,8 +314,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 }
 
 .ask-copy h1 em {
-  color: var(--brand-teal);
-  text-shadow: 0 4px 0 rgba(21, 155, 152, .13);
+  color: var(--brand-coral);
+  background: linear-gradient(100deg, #7c3aed, #db2777);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 4px 0 rgba(236, 72, 153, .1);
 }
 
 .ask-copy p {
@@ -332,29 +359,31 @@ textarea, .pin-input {
 }
 
 textarea:focus, .pin-input:focus {
-  border-color: rgba(53, 88, 200, .55);
+  border-color: rgba(79, 70, 229, .55);
   background: #fff;
-  box-shadow: 0 0 0 4px rgba(53, 88, 200, .1);
+  box-shadow: 0 0 0 4px rgba(79, 70, 229, .1);
   outline: 0;
 }
 
 .primary-button {
   position: relative;
   border-radius: 12px;
-  background: linear-gradient(115deg, var(--brand), #426de0 62%, var(--brand-teal));
-  box-shadow: 0 8px 18px rgba(53, 88, 200, .2);
+  background: linear-gradient(115deg, var(--brand-dark), var(--brand) 38%, #7c3aed 68%, var(--brand-coral));
+  background-size: 180% 180%;
+  box-shadow: 0 8px 18px rgba(79, 70, 229, .24);
+  animation: gradientFlow 8s ease-in-out infinite;
   transition: transform .2s ease, box-shadow .2s ease, filter .2s ease;
 }
 
 .primary-button:hover:not(:disabled) {
   transform: translateY(-3px);
   filter: saturate(1.08);
-  box-shadow: 0 12px 26px rgba(53, 88, 200, .28);
+  box-shadow: 0 12px 26px rgba(79, 70, 229, .32);
 }
 
 .primary-button:active:not(:disabled) {
   transform: translateY(1px);
-  box-shadow: 0 4px 10px rgba(53, 88, 200, .18);
+  box-shadow: 0 4px 10px rgba(79, 70, 229, .2);
 }
 
 .notice.success {
@@ -374,12 +403,12 @@ textarea:focus, .pin-input:focus {
 }
 
 .realtime-pill span {
-  background: var(--brand-teal);
-  box-shadow: 0 0 0 5px rgba(21, 155, 152, .15);
+  background: var(--brand-coral);
+  box-shadow: 0 0 0 5px rgba(236, 72, 153, .18);
 }
 
 .orb-one {
-  background: radial-gradient(circle at 30% 30%, rgba(53, 88, 200, .14), transparent 68%);
+  background: radial-gradient(circle at 30% 30%, rgba(79, 70, 229, .2), transparent 68%);
 }
 
 .orb-two {
@@ -393,8 +422,8 @@ textarea:focus, .pin-input:focus {
 }
 
 .auth-icon {
-  background: linear-gradient(145deg, var(--brand), var(--brand-teal));
-  box-shadow: 0 12px 24px rgba(53, 88, 200, .22);
+  background: linear-gradient(145deg, var(--brand), var(--brand-coral));
+  box-shadow: 0 12px 24px rgba(79, 70, 229, .25);
 }
 
 .auth-card .primary-button {
@@ -442,8 +471,8 @@ textarea:focus, .pin-input:focus {
 }
 
 .search-box:focus-within {
-  border-color: rgba(53, 88, 200, .5);
-  box-shadow: 0 0 0 4px rgba(53, 88, 200, .08);
+  border-color: rgba(79, 70, 229, .5);
+  box-shadow: 0 0 0 4px rgba(79, 70, 229, .1);
 }
 
 .tabs {
@@ -512,7 +541,7 @@ textarea:focus, .pin-input:focus {
   border: 0;
   color: white;
   background: var(--brand);
-  box-shadow: 0 8px 18px rgba(53, 88, 200, .2);
+  box-shadow: 0 8px 18px rgba(79, 70, 229, .22);
   transition: transform .2s ease, box-shadow .2s ease, filter .2s ease;
 }
 
@@ -520,7 +549,7 @@ textarea:focus, .pin-input:focus {
   color: white;
   background: var(--brand-dark);
   transform: translateY(-2px);
-  box-shadow: 0 12px 24px rgba(53, 88, 200, .24);
+  box-shadow: 0 12px 24px rgba(79, 70, 229, .28);
 }
 
 .answer-button:disabled, .secondary-button:disabled, .danger-button:disabled {
@@ -747,7 +776,12 @@ textarea:focus, .pin-input:focus {
 }
 
 @keyframes pulse {
-  50% { box-shadow: 0 0 0 9px rgba(21, 155, 152, 0); }
+  50% { box-shadow: 0 0 0 9px rgba(236, 72, 153, 0); }
+}
+
+@keyframes gradientFlow {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
 }
 
 .submission-backdrop {
@@ -779,7 +813,7 @@ textarea:focus, .pin-input:focus {
   position: absolute;
   inset: 0 0 auto;
   height: 5px;
-  background: linear-gradient(90deg, var(--brand), var(--brand-teal));
+  background: linear-gradient(90deg, var(--brand), #7c3aed, var(--brand-coral));
   content: '';
 }
 
@@ -867,6 +901,158 @@ textarea:focus, .pin-input:focus {
     animation: none;
     transform: none;
   }
+
+  .background-grid {
+    animation: none;
+  }
+}
+
+.app-shell {
+  background:
+    radial-gradient(ellipse at 2% 48%, rgba(79, 70, 229, .04), transparent 34%),
+    radial-gradient(ellipse at 95% 8%, rgba(236, 72, 153, .09), transparent 32%),
+    #fff;
+}
+
+.background-grid {
+  background-image:
+    linear-gradient(rgba(79, 70, 229, .03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(79, 70, 229, .03) 1px, transparent 1px);
+}
+
+.topbar {
+  animation: navDrop .6s cubic-bezier(.2, .8, .2, 1) both;
+}
+
+.brand-mark {
+  animation: brandShimmer 5s ease-in-out infinite;
+}
+
+.ask-copy .eyebrow svg {
+  animation: sparkleTilt 3s ease-in-out infinite;
+}
+
+.question-card {
+  animation: cardIn .75s .08s backwards, cardAura 10s 1s ease-in-out infinite;
+}
+
+.question-card, .auth-card, .question-item, .admin-columns section, .create-form {
+  border: 1px solid transparent;
+  background: linear-gradient(#fff, #fff) padding-box,
+    linear-gradient(135deg, rgba(79, 70, 229, .18), rgba(236, 72, 153, .14), rgba(34, 211, 238, .12)) border-box;
+}
+
+.question-card {
+  box-shadow: 0 24px 60px rgba(79, 70, 229, .1), 0 4px 12px rgba(236, 72, 153, .04);
+}
+
+.auth-card {
+  box-shadow: 0 24px 60px rgba(79, 70, 229, .1), 0 4px 12px rgba(236, 72, 153, .04);
+}
+
+.question-item {
+  animation: cardIn .4s var(--delay) backwards;
+  box-shadow: 0 8px 24px rgba(79, 70, 229, .045);
+}
+
+.primary-button {
+  animation: buttonFloat 8s ease-in-out infinite;
+}
+
+.admin-columns section, .question-tools {
+  transition: transform .3s cubic-bezier(.2, .8, .2, 1), box-shadow .3s ease;
+}
+
+.admin-columns section:hover, .question-tools:hover {
+  transform: perspective(1000px) translateY(-2px) rotateX(.35deg);
+  box-shadow: 0 16px 36px rgba(79, 70, 229, .1);
+}
+
+.moderator-row {
+  transition: background .2s ease, padding .2s ease;
+}
+
+.moderator-row:hover {
+  background: linear-gradient(90deg, rgba(79, 70, 229, .04), rgba(236, 72, 153, .03));
+}
+
+.question-item:hover {
+  transform: perspective(900px) rotateX(.8deg) rotateY(-.4deg) translateY(-4px) scale(1.005);
+  box-shadow: 0 16px 36px rgba(79, 70, 229, .1), 0 5px 16px rgba(236, 72, 153, .06);
+}
+
+.nav-link, .icon-button, .primary-button, .answer-button, .secondary-button, .danger-button {
+  transition-timing-function: cubic-bezier(.2, .8, .2, 1);
+}
+
+.primary-button:active:not(:disabled), .answer-button:active:not(:disabled) {
+  transform: translateY(1px) scale(.98);
+}
+
+.orb-one {
+  animation: drift 9s ease-in-out infinite, orbGlow 6s ease-in-out infinite alternate;
+}
+
+.orb-two {
+  animation: drift 11s ease-in-out -3s infinite, orbGlow 7s ease-in-out -2s infinite alternate;
+}
+
+.realtime-pill span {
+  animation: pulse 1.8s infinite, liveHeartbeat 2.4s ease-in-out infinite;
+}
+
+.moderator-status.active > span {
+  animation: activePing 2.5s ease-in-out infinite;
+}
+
+.background-grid {
+  animation: gridDrift 24s linear infinite;
+}
+
+.question-modal-status:not(.answered) svg {
+  animation: statusSpin 8s linear infinite;
+}
+
+@keyframes navDrop {
+  from { opacity: 0; transform: translateY(-12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes brandShimmer {
+  0%, 100% { filter: saturate(1); box-shadow: 0 8px 18px rgba(79, 70, 229, .2); }
+  50% { filter: saturate(1.25); box-shadow: 0 12px 26px rgba(236, 72, 153, .28); }
+}
+
+@keyframes sparkleTilt {
+  0%, 100% { transform: rotate(0) scale(1); }
+  50% { transform: rotate(14deg) scale(1.12); }
+}
+
+@keyframes cardAura {
+  0%, 100% { filter: saturate(1); }
+  50% { filter: saturate(1.1); }
+}
+
+@keyframes orbGlow {
+  from { opacity: .24; }
+  to { opacity: .48; }
+}
+
+@keyframes liveHeartbeat {
+  0%, 100% { transform: scale(1); }
+  12% { transform: scale(1.22); }
+  24% { transform: scale(1); }
+  36% { transform: scale(1.16); }
+  48% { transform: scale(1); }
+}
+
+@keyframes statusSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes activePing {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(22, 131, 74, .08); }
+  50% { box-shadow: 0 0 0 5px rgba(22, 131, 74, .16); }
 }
 
 @keyframes drift {

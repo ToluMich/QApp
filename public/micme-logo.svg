@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="brand" x1="8" y1="8" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4F46E5"/>
+      <stop offset=".52" stop-color="#7C3AED"/>
+      <stop offset="1" stop-color="#EC4899"/>
+    </linearGradient>
+    <linearGradient id="mic" x1="24" y1="20" x2="43" y2="48" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff"/>
+      <stop offset="1" stop-color="#F3E8FF"/>
+    </linearGradient>
+    <filter id="shadow" x="2" y="2" width="60" height="62" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#4F46E5" flood-opacity=".24"/>
+    </filter>
+  </defs>
+  <g filter="url(#shadow)">
+    <path fill="url(#brand)" d="M17 7h30a10 10 0 0 1 10 10v22a10 10 0 0 1-10 10H32L19 58v-9h-2A10 10 0 0 1 7 39V17A10 10 0 0 1 17 7Z"/>
+    <path stroke="url(#mic)" stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M24 30v2a8 8 0 0 0 16 0v-2"/>
+    <rect width="8" height="18" x="28" y="16" fill="url(#mic)" rx="4"/>
+    <path stroke="url(#mic)" stroke-linecap="round" stroke-width="3.5" d="M32 42v5m-6 0h12"/>
+    <circle cx="47" cy="19" r="3" fill="#FDBA74"/>
+  </g>
+</svg>

@@ -1,6 +1,6 @@
-# QRoom
+# MicMe
 
-QRoom is a React/Vite frontend backed entirely by Supabase: Postgres stores questions and moderator data, Supabase Realtime streams question changes, and an Edge Function handles PIN login and privileged actions. The frontend remains plain JavaScript/JSX.
+MicMe is a React/Vite frontend backed entirely by Supabase: Postgres stores questions and moderator data, Supabase Realtime streams question changes, and an Edge Function handles PIN login and privileged actions. The frontend remains plain JavaScript/JSX.
 
 ## Create and configure Supabase
 
@@ -18,7 +18,7 @@ QRoom is a React/Vite frontend backed entirely by Supabase: Postgres stores ques
    ```powershell
    npx supabase db push --remote
    ```
-   This creates QRoom's tables and security policies; it does not restore a backup or import data from Firebase. Start with a new Supabase project if you want a clean database.
+   This creates MicMe's tables and security policies; it does not restore a backup or import data from Firebase. Start with a new Supabase project if you want a clean database.
 6. Configure Edge Function secrets in **Project Settings → Edge Functions → Secrets**:
    - `ADMIN_PIN`: your chosen six-digit admin PIN. Do not keep the example PIN for a public app.
    - `PIN_INDEX_SECRET`: a private random secret (at least 32 random bytes, hex encoded).

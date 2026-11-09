@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { AlertTriangle, Check, ChevronRight, CircleDot, Clock3, Copy, Download, FileSpreadsheet, LogOut, MessageCircle, Search, ShieldCheck, Sparkles, Trash2, Users, X } from 'lucide-react'
+import { AlertTriangle, Check, ChevronRight, CircleDot, Clock3, Copy, Download, FileSpreadsheet, LogOut, Search, ShieldCheck, Sparkles, Trash2, Users, X } from 'lucide-react'
 import { apiCall, ensureAnonymousSession, isSupabaseConfigured, supabase } from './supabase'
 import './App.css'
 import './theme.css'
@@ -8,7 +8,7 @@ import './theme.css'
 const statusText = { unanswered: 'Awaiting answer', answered: 'Answered' }
 
 function Brand() {
-  return <div className="brand"><span className="brand-mark"><MessageCircle size={22} /></span><span>Q<span>Room</span></span></div>
+  return <div className="brand"><img className="brand-mark" src="/micme-logo.svg" alt="" /><span className="brand-name">MicMe</span></div>
 }
 
 function Nav({ view, navigate, session, logout }) {
@@ -599,7 +599,7 @@ function App() {
     : session?.role === 'moderator' && view === 'mod' ? <QuestionList role="moderator" /> : null
   const loginRole = view === 'admin' || view === 'team' ? 'admin' : 'moderator'
   const showLogin = (view === 'admin' || view === 'team' || view === 'mod') && session?.role !== loginRole
-  if (!ready) return <div className="app-shell app-loading">Connecting to QRoom…</div>
+  if (!ready) return <div className="app-shell app-loading">Connecting to MicMe…</div>
   if (startupError) return <main className="auth-page"><section className="auth-card"><div className="auth-icon"><ShieldCheck /></div><h2>Supabase setup needed</h2><p>{startupError}</p><p>After configuration, restart the local app with <code>npm.cmd run dev</code>.</p></section></main>
   return <div className="app-shell">
     <div className="background-grid" />
