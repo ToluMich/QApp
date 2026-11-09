@@ -1,0 +1,87 @@
+
+
+It is a React/Vite application currently built with plain JSX, Firebase SDK integration, Firestore, Firebase Authentication, Firebase Cloud Functions, and Firebase Hosting configuration.
+
+Core features
+-------------
+
+Public audience page
+- Visitors can submit questions anonymously.
+- No name or account is required.
+- The page should submit questions to Firestore.
+- Questions must be limited to 280 characters.
+- Submission should show clear loading, success, and error states.
+
+Moderator portal
+- Moderators log in using only a unique 6-digit PIN.
+- PINs must be generated and securely stored by the backend.
+- Different moderators must never receive the same active PIN.
+- PINs must not be stored in plain text or directly exposed to Firestore clients.
+- Moderators can see unanswered and answered questions.
+- New questions must appear at the top.
+- The unanswered and answered views must update in real time.
+- Moderators can mark unanswered questions as answered.
+- Only authenticated and authorized moderators may update questions.
+- Answering a question must record:
+  - Moderator ID
+  - Moderator name
+  - Timestamp
+
+Admin portal
+- Admin authentication uses a fixed 6-digit PIN: 098765.
+- The admin PIN must be compared securely on the backend.
+- Admin can create moderators by entering only a moderator name.
+- Admin can view all moderators.
+- Admin can activate/deactivate individual moderators.
+- Admin can activate/deactivate all moderators.
+- Admin can generate or change moderator PINs.
+- Admin can view every question.
+- Admin can see who answered each question and when.
+- Admin can review moderator activity logs.
+
+
+Backend requirements
+--------------------
+Implement callable functions for:
+- loginAdmin
+- loginModerator
+- createModerator
+- updateModerator
+- updateAllModerators
+- markQuestionAnswered
+- reopenQuestion
+
+Use transactional or atomic operations for unique PIN allocation.
+
+Security requirements:
+- Do not store raw PINs in Firestore where clients can read them.
+- Hash PINs using PBKDF2 or a better password-hashing algorithm with unique salts.
+- Keep the admin PIN in a Firebase Functions environment variable or equivalent secure server configuration.
+- Keep web Firebase configuration values out of source control where appropriate.
+
+UI requirements
+---------------
+Preserve the existing polished visual design. Improve it with:
+- Responsive layouts for desktop and mobile
+- Accessible forms and controls
+- Keyboard-friendly interactions
+- Meaningful transitions and animations
+- Clear empty, loading, success, and error states
+- Confirmation dialogs for destructive admin actions
+- PIN input masking and numeric validation
+- Searchable question lists
+
+Deployment requirements
+-----------------------
+1. Audit the current project.
+2. Identify incomplete, conflicting, or broken code.
+3. Fix all backend, frontend, authorization, and routing issues.
+4. Run a production build successfully.
+5. Deploy Firestore rules, Firestore indexes, Cloud Functions, and Hosting using Firebase CLI.
+6. Give the exact commands and clearly identify steps requiring user interaction in the Firebase console.
+
+Important constraint
+--------------------
+Do not manually expose sensitive PIN comparisons or admin/moderator management operations to Firestore clients. All privileged operations must be enforced by authenticated Cloud Functions and Firestore Security Rules.
+
+Please audit and complete the existing implementation rather than restarting unnecessarily.

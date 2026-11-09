@@ -1,0 +1,31 @@
+# Dependencies and build output
+node_modules
+dist
+dist-ssr
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+supabase/.env
+supabase/.env.*
+!supabase/.env.example
+*-firebase-adminsdk-*.json
+*service-account*.json
+
+# Tool output
+.firebase
+.supabase
+*.log
+npm-debug.log*
+
+# Editor files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
