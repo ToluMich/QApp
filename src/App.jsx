@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, ChevronRight, CircleDot, Clock3, Copy, Download, FileSpreadsheet, LogOut, MessageCircle, Search, ShieldCheck, Sparkles, Trash2, Users, X } from 'lucide-react'
+import { AlertTriangle, Check, ChevronRight, CircleDot, Clock3, Copy, Download, FileSpreadsheet, LogOut, MessageCircle, Search, ShieldCheck, Sparkles, Trash2, Users, X } from 'lucide-react'
 import { apiCall, ensureAnonymousSession, isSupabaseConfigured, supabase } from './supabase'
 import './App.css'
 import './theme.css'
@@ -13,7 +13,7 @@ function Brand() {
 
 function Nav({ view, navigate, session, logout }) {
   const links = session?.role === 'admin'
-    ? [['ask', 'Ask a question'], ['mod', 'Moderator'], ['admin', 'Admin']]
+    ? [['ask', 'Ask a question'], ['mod', 'Moderator'], ['admin', 'Questions'], ['team', 'Team management']]
     : session?.role === 'moderator'
       ? [['ask', 'Ask a question'], ['mod', 'Moderator']]
       : [['ask', 'Ask a question']]
@@ -21,28 +21,71 @@ function Nav({ view, navigate, session, logout }) {
     <Brand />
     <div className="nav-actions">
       {links.map(([key, label]) => <button key={key} className={view === key ? 'nav-link active' : 'nav-link'} onClick={() => navigate(key)}>{label}</button>)}
+      {session && <div className="nav-identity"><strong>{session.name}</strong><span>{session.role}</span></div>}
       {session && <button className="icon-button" aria-label="Sign out" onClick={logout}><LogOut size={18} /></button>}
     </div>
   </nav>
 }
 
+function SubmissionDialog({ result, onClose }) {
+  const closeButtonRef = useRef(null)
+
+  useEffect(() => {
+    if (!result) return
+    closeButtonRef.current?.focus()
+    const handleKeyDown = event => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [result, onClose])
+
+  if (!result) return null
+  const succeeded = result.type === 'success'
+
+  return createPortal(
+    <div className="submission-backdrop" onMouseDown={event => {
+      if (event.target === event.currentTarget) onClose()
+    }}>
+      <section
+        className={`submission-dialog ${succeeded ? 'success' : 'error'}`}
+        role={succeeded ? 'dialog' : 'alertdialog'}
+        aria-modal="true"
+        aria-labelledby="submission-title"
+        aria-describedby="submission-description"
+      >
+        <button ref={closeButtonRef} className="submission-close" onClick={onClose} aria-label="Close message"><X size={19} /></button>
+        <div className="submission-icon">{succeeded ? <Check size={30} /> : <AlertTriangle size={28} />}</div>
+        <p className="submission-eyebrow">{succeeded ? 'Question submitted' : 'Submission interrupted'}</p>
+        <h2 id="submission-title">{succeeded ? 'You’re all set.' : 'Your draft is safe.'}</h2>
+        <p id="submission-description">{succeeded
+          ? 'Your question is now live. A moderator will answer it shortly.'
+          : 'We couldn’t confirm that your question was sent. Your text is still in the box—check your connection and try again.'}</p>
+        <button className="primary-button submission-confirm" onClick={onClose}>{succeeded ? 'Done' : 'Back to my question'}</button>
+      </section>
+    </div>,
+    document.body,
+  )
+}
+
 function AskPage() {
   const [text, setText] = useState('')
   const [state, setState] = useState('idle')
-  const [message, setMessage] = useState('')
+  const [submissionResult, setSubmissionResult] = useState(null)
   const submit = async (event) => {
     event.preventDefault()
-    if (!text.trim()) return
+    const submittedText = text.trim()
+    if (!submittedText || state === 'loading') return
     setState('loading')
     try {
-      const { error } = await supabase.from('questions').insert({ text: text.trim() })
+      const { error } = await supabase.from('questions').insert({ text: submittedText })
       if (error) throw error
-      setText('')
+      setText(current => current.trim() === submittedText ? '' : current)
       setState('success')
-      setMessage('Your question is live. A moderator will answer it shortly.')
+      setSubmissionResult({ type: 'success' })
     } catch {
       setState('error')
-      setMessage('We could not submit your question. Please try again.')
+      setSubmissionResult({ type: 'error' })
     }
   }
   return <main className="ask-page">
@@ -55,14 +98,14 @@ function AskPage() {
     <section className="question-card">
       <div className="card-label">Your question</div>
       <form onSubmit={submit}>
-        <textarea value={text} maxLength={280} onChange={(e) => { setText(e.target.value); setState('idle') }} placeholder="Ask anything..." aria-label="Question" autoFocus />
+        <textarea value={text} maxLength={280} disabled={state === 'loading'} onChange={(e) => { setText(e.target.value); setState('idle') }} placeholder="Ask anything..." aria-label="Question" autoFocus />
         <div className="composer-footer"><span className={text.length > 250 ? 'count danger' : 'count'}>{text.length}/280</span>
           <button className="primary-button" disabled={state === 'loading' || !text.trim()}>{state === 'loading' ? 'Sending...' : 'Send question'} <ChevronRight size={18} /></button>
         </div>
       </form>
-      {message && <div className={`notice ${state}`} role="status">{message}</div>}
     </section>
     <div className="realtime-pill"><span /> Questions appear in real time</div>
+    <SubmissionDialog result={submissionResult} onClose={() => setSubmissionResult(null)} />
   </main>
 }
 
@@ -97,6 +140,7 @@ function QuestionList({ role }) {
   const [search, setSearch] = useState('')
   const [busy, setBusy] = useState('')
   const [actionMessage, setActionMessage] = useState('')
+  const [actionMessageType, setActionMessageType] = useState('info')
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [openQuestionId, setOpenQuestionId] = useState(null)
   const closeButtonRef = useRef(null)
@@ -121,7 +165,10 @@ function QuestionList({ role }) {
     loadQuestions().then(data => {
       if (active) setQuestions(data)
     }).catch(error => {
-      if (active) setActionMessage(error.message || 'Could not load questions.')
+      if (active) {
+        setActionMessageType('error')
+        setActionMessage(error.message || 'Could not load questions.')
+      }
     })
     const channel = supabase.channel(`qroom-questions-${role}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'questions' }, payload => {
@@ -141,7 +188,10 @@ function QuestionList({ role }) {
         })
       })
       .subscribe(status => {
-        if (status === 'CHANNEL_ERROR' && active) setActionMessage('Live updates could not connect. Check your Supabase Realtime setup.')
+        if (status === 'CHANNEL_ERROR' && active) {
+          setActionMessageType('warning')
+          setActionMessage('Live updates could not connect. Check your Supabase Realtime setup.')
+        }
       })
     return () => {
       active = false
@@ -258,11 +308,13 @@ function QuestionList({ role }) {
     link.click()
     link.remove()
     window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    setActionMessageType('success')
     setActionMessage(`Exported ${rows.length} question${rows.length === 1 ? '' : 's'} to Excel.`)
   }
   const deleteAllQuestions = async () => {
     if (!window.confirm(`Permanently delete all ${questions.length} questions? This cannot be undone.`)) return
     setBusy('all')
+    setActionMessageType('info')
     setActionMessage('Deleting all questions...')
     try {
       const result = await apiCall('deleteAllQuestions')
@@ -272,11 +324,14 @@ function QuestionList({ role }) {
       try {
         setQuestions(await loadQuestions())
       } catch (error) {
+        setActionMessageType('warning')
         setActionMessage(`Deleted ${result.deleted ?? 0} questions, but could not refresh the list: ${error.message}`)
         return
       }
+      setActionMessageType('success')
       setActionMessage(`Deleted ${result.deleted ?? 0} question${result.deleted === 1 ? '' : 's'}.`)
     } catch (error) {
+      setActionMessageType('error')
       setActionMessage(error.message || 'Could not delete questions.')
     } finally {
       setBusy('')
@@ -286,8 +341,10 @@ function QuestionList({ role }) {
     setBusy(question.id)
     try {
       await apiCall(status === 'answered' ? 'markQuestionAnswered' : 'reopenQuestion', { questionId: question.id })
+      setActionMessageType('success')
       setActionMessage('Question updated.')
     } catch (error) {
+      setActionMessageType('error')
       setActionMessage(error.message || 'Could not update question.')
     }
     finally { setBusy('') }
@@ -317,7 +374,7 @@ function QuestionList({ role }) {
         <button className="danger-button" disabled={!questions.length || busy === 'all'} onClick={deleteAllQuestions}><Trash2 size={16} /> {busy === 'all' ? 'Deleting…' : 'Delete all questions'}</button>
       </div>
     </div>}
-    {actionMessage && <div className="notice" role="status">{actionMessage}</div>}
+    {actionMessage && <div className={`notice ${actionMessageType}`} role="status">{actionMessage}</div>}
     <section className="question-grid">{visible.map((question, index) => <article className={`question-item ${isAdmin ? 'selectable' : ''}`} key={question.id} tabIndex={0} aria-label={`View question: ${question.text}`} onClick={() => setOpenQuestionId(question.id)} onKeyDown={event => {
       if (event.target !== event.currentTarget) return
       if (event.key === 'Enter' || event.key === ' ') {
@@ -331,7 +388,7 @@ function QuestionList({ role }) {
         {question.status === 'answered' && <div className="answer-meta"><Check size={15} /> Answered by {question.answered_by_name} · {date(question.answered_at)}</div>}
         {role === 'admin' && question.status === 'answered' && <button className="text-button" disabled={busy === question.id} onClick={event => { event.stopPropagation(); updateQuestion(question, 'unanswered') }}>Reopen</button>}
       </div>
-      {question.status === 'unanswered' && <button className="answer-button" disabled={busy === question.id} onClick={event => { event.stopPropagation(); updateQuestion(question, 'answered') }}><Check size={17} /> {busy === question.id ? 'Updating...' : 'Answered'}</button>}
+      {question.status === 'unanswered' && <button className="answer-button" disabled={busy === question.id} onClick={event => { event.stopPropagation(); updateQuestion(question, 'answered') }}><Check size={17} /> {busy === question.id ? 'Updating...' : 'Answer'}</button>}
     </article>)}
       {!visible.length && <div className="empty-state"><Clock3 /><h3>No {tab} questions</h3><p>{search ? 'Try a different search.' : 'New submissions will appear here instantly.'}</p></div>}
     </section>
@@ -365,6 +422,7 @@ function AdminPortal() {
   const [logs, setLogs] = useState([])
   const [name, setName] = useState('')
   const [message, setMessage] = useState('')
+  const [messageType, setMessageType] = useState('info')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [linkMessage, setLinkMessage] = useState('')
@@ -383,83 +441,115 @@ function AdminPortal() {
       setModerators(result.moderators || [])
       setLogs(result.logs || [])
     } catch (error) {
+      setMessageType('error')
       setMessage(error.message || 'Could not load admin data.')
     } finally {
       setLoading(false)
     }
   }
   useEffect(() => { refresh() }, [])
+  useEffect(() => {
+    const channel = supabase.channel('qroom-admin-activity-logs')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activity_logs' }, payload => {
+        setLogs(current => [payload.new, ...current.filter(log => log.id !== payload.new.id)]
+          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+          .slice(0, 100)
+          .map(log => ({ ...log, createdAt: log.created_at })))
+      })
+      .subscribe(status => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          setMessageType('warning')
+          setMessage('Live activity updates disconnected. Refresh the page to reconnect.')
+        }
+      })
+    return () => { supabase.removeChannel(channel) }
+  }, [])
   const create = async e => {
     e.preventDefault()
     if (saving) return
     setSaving(true)
+    setMessageType('info')
     setMessage('Creating moderator...')
     try {
       const result = await apiCall('createModerator', { name })
       setName('')
+      setMessageType('success')
       setMessage(result.pin ? `Created ${result.name}. Initial PIN: ${result.pin}` : 'Moderator created.')
       await refresh()
       if (result.pin) setMessage(`Created ${result.name}. Initial PIN: ${result.pin}`)
-    } catch (error) { setMessage(error.message || 'Could not create moderator.') }
+    } catch (error) { setMessageType('error'); setMessage(error.message || 'Could not create moderator.') }
     finally { setSaving(false) }
   }
   const toggle = async moderator => {
     if (moderator.active && !window.confirm(`Deactivate ${moderator.name}?`)) return
     setSaving(true)
+    setMessageType('info')
     setMessage(`Updating ${moderator.name}...`)
     try {
       await apiCall('updateModerator', { moderatorId: moderator.id, active: !moderator.active })
+      setMessageType(moderator.active ? 'warning' : 'success')
+      setMessage(`${moderator.name} is now ${moderator.active ? 'inactive' : 'active'}.`)
       await refresh()
-    } catch (error) { setMessage(error.message || 'Could not update moderator.') }
+    } catch (error) { setMessageType('error'); setMessage(error.message || 'Could not update moderator.') }
     finally { setSaving(false) }
   }
   const resetPin = async moderator => {
     if (!window.confirm(`Generate a new login PIN for ${moderator.name}? Their current PIN will stop working.`)) return
     setSaving(true)
+    setMessageType('info')
     setMessage(`Generating a new PIN for ${moderator.name}...`)
     try {
       const result = await apiCall('updateModerator', { moderatorId: moderator.id, generatePin: true })
+      setMessageType('success')
+      setMessage(`A new PIN was generated for ${moderator.name}.`)
       if (result.pin) window.prompt(`New PIN for ${moderator.name}`, result.pin)
       await refresh()
-    } catch (error) { setMessage(error.message || 'Could not generate a new PIN.') }
+    } catch (error) { setMessageType('error'); setMessage(error.message || 'Could not generate a new PIN.') }
     finally { setSaving(false) }
   }
   const deleteModerator = async moderator => {
     if (!window.confirm(`Permanently delete moderator ${moderator.name}? They will lose access immediately.`)) return
     setSaving(true)
+    setMessageType('info')
     setMessage(`Deleting ${moderator.name}...`)
     try {
       await apiCall('deleteModerator', { moderatorId: moderator.id })
+      setMessageType('success')
       setMessage(`${moderator.name} was deleted.`)
       await refresh()
     } catch (error) {
+      setMessageType('error')
       setMessage(error.message || 'Could not delete moderator.')
     } finally { setSaving(false) }
   }
   const toggleAll = async active => {
     if (!active && !window.confirm('Deactivate all moderators?')) return
     setSaving(true)
+    setMessageType('info')
     setMessage(active ? 'Activating moderators...' : 'Deactivating moderators...')
     try {
       await apiCall('updateAllModerators', { active })
+      setMessageType(active ? 'success' : 'warning')
+      setMessage(active ? 'All moderators are active.' : 'All moderators are inactive.')
       await refresh()
-    } catch (error) { setMessage(error.message || 'Could not update moderators.') }
+    } catch (error) { setMessageType('error'); setMessage(error.message || 'Could not update moderators.') }
     finally { setSaving(false) }
   }
   return <main className="dashboard admin-dashboard">
-    <QuestionList role="admin" />
     <header className="dashboard-head"><div><p className="eyebrow">Administration</p><h1>Team management</h1></div><div className="header-actions"><button className="secondary-button" onClick={copyModeratorLink}><Copy size={16} /> Copy moderator link</button><button className="secondary-button" disabled={saving} onClick={() => toggleAll(false)}>Deactivate all</button><button className="secondary-button" disabled={saving} onClick={() => toggleAll(true)}>Activate all</button></div></header>
     {linkMessage && <div className="notice" role="status">{linkMessage}</div>}
-    <form className="create-form" onSubmit={create}><input value={name} required maxLength={80} onChange={e => setName(e.target.value)} placeholder="Moderator name" /><button className="primary-button" disabled={saving || !name.trim()}>{saving ? 'Creating...' : 'Create moderator'}</button>{message && <span role="status">{message}</span>}</form>
+    <form className="create-form" onSubmit={create}><input value={name} required maxLength={80} onChange={e => setName(e.target.value)} placeholder="Moderator name" /><button className="primary-button" disabled={saving || !name.trim()}>{saving ? 'Creating...' : 'Create moderator'}</button>{message && <span className={`notice compact ${messageType}`} role="status">{message}</span>}</form>
     <div className="admin-columns">
-      <section><h2>Moderators</h2>{loading ? <p>Loading moderators...</p> : moderators.map(moderator => <div className="moderator-row" key={moderator.id}><div><strong>{moderator.name}</strong><small>{moderator.active ? 'Active' : 'Inactive'} · PIN {moderator.hasPin ? 'configured' : 'missing'}</small></div><button disabled={saving} onClick={() => resetPin(moderator)}>New PIN</button><button disabled={saving} className={moderator.active ? 'danger-button' : 'secondary-button'} onClick={() => toggle(moderator)}>{moderator.active ? 'Deactivate' : 'Activate'}</button><button className="danger-button delete-moderator-button" disabled={saving} aria-label={`Delete ${moderator.name}`} onClick={() => deleteModerator(moderator)}><Trash2 size={15} /> Delete</button></div>)}</section>
+      <section><h2>Moderators</h2>{loading ? <p>Loading moderators...</p> : moderators.map(moderator => <div className="moderator-row" key={moderator.id}><div className="moderator-identity"><strong>{moderator.name}</strong><span className={`moderator-status ${moderator.active ? 'active' : 'inactive'}`}><span aria-hidden="true" />{moderator.active ? 'Active' : 'Inactive'}</span><small className={moderator.hasPin ? 'pin-ready' : 'pin-missing'}>PIN {moderator.hasPin ? 'configured' : 'missing'}</small></div><button className="pin-button" disabled={saving} onClick={() => resetPin(moderator)}>New PIN</button><button disabled={saving} className={moderator.active ? 'deactivate-button' : 'activate-button'} onClick={() => toggle(moderator)}>{moderator.active ? 'Deactivate' : 'Activate'}</button><button className="danger-button delete-moderator-button" disabled={saving} aria-label={`Delete ${moderator.name}`} onClick={() => deleteModerator(moderator)}><Trash2 size={15} /> Delete</button></div>)}</section>
       <section><h2>Activity log</h2>{loading ? <p>Loading activity...</p> : logs.map(log => <div className="log-row" key={log.id}><span>{log.action}</span><small>{log.moderator_name || log.actor_name || 'Admin'} · {log.createdAt}</small></div>)}</section>
     </div>
   </main>
 }
 
 function App() {
-  const initialView = window.location.hash === '#/moderator' ? 'mod' : window.location.hash === '#/admin' ? 'admin' : 'ask'
+  const initialView = window.location.hash === '#/moderator' ? 'mod'
+    : window.location.hash === '#/admin' ? 'admin'
+      : window.location.hash === '#/team' ? 'team' : 'ask'
   const [view, setView] = useState(initialView)
   const [session, setSession] = useState(null)
   const [ready, setReady] = useState(!isSupabaseConfigured)
@@ -485,13 +575,15 @@ function App() {
   }, [])
   useEffect(() => {
     const handleHashChange = () => {
-      setView(window.location.hash === '#/moderator' ? 'mod' : window.location.hash === '#/admin' ? 'admin' : 'ask')
+      setView(window.location.hash === '#/moderator' ? 'mod'
+        : window.location.hash === '#/admin' ? 'admin'
+          : window.location.hash === '#/team' ? 'team' : 'ask')
     }
     window.addEventListener('hashchange', handleHashChange)
     return () => window.removeEventListener('hashchange', handleHashChange)
   }, [])
   const navigate = nextView => {
-    const hash = nextView === 'mod' ? '#/moderator' : nextView === 'admin' ? '#/admin' : ''
+    const hash = nextView === 'mod' ? '#/moderator' : nextView === 'admin' ? '#/admin' : nextView === 'team' ? '#/team' : ''
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${hash}`)
     setView(nextView)
   }
@@ -502,9 +594,11 @@ function App() {
     setSession(null)
     navigate('ask')
   }
-  const portalContent = session?.role === 'admin' ? <AdminPortal /> : session?.role === 'moderator' ? <QuestionList role={session.role} /> : null
-  const loginRole = view === 'admin' ? 'admin' : 'moderator'
-  const showLogin = (view === 'admin' || view === 'mod') && session?.role !== loginRole
+  const portalContent = session?.role === 'admin'
+    ? view === 'team' ? <AdminPortal /> : view === 'admin' ? <QuestionList role="admin" /> : null
+    : session?.role === 'moderator' && view === 'mod' ? <QuestionList role="moderator" /> : null
+  const loginRole = view === 'admin' || view === 'team' ? 'admin' : 'moderator'
+  const showLogin = (view === 'admin' || view === 'team' || view === 'mod') && session?.role !== loginRole
   if (!ready) return <div className="app-shell app-loading">Connecting to QRoom…</div>
   if (startupError) return <main className="auth-page"><section className="auth-card"><div className="auth-icon"><ShieldCheck /></div><h2>Supabase setup needed</h2><p>{startupError}</p><p>After configuration, restart the local app with <code>npm.cmd run dev</code>.</p></section></main>
   return <div className="app-shell">

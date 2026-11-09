@@ -162,6 +162,11 @@ async function loginModerator(request: Request, data: Record<string, unknown>, u
 async function createModerator(data: Record<string, unknown>, actor: Actor) {
   const name = String(data.name ?? '').trim()
   if (!name || name.length > 80) throw new Error('Enter a moderator name between 1 and 80 characters.')
+  const { data: existingModerators, error: lookupError } = await admin.from('moderators').select('name')
+  if (lookupError) throw lookupError
+  if ((existingModerators ?? []).some(moderator => moderator.name.trim().toLowerCase() === name.toLowerCase())) {
+    throw new Error('A moderator with this name already exists.')
+  }
 
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const pin = randomPin()
@@ -175,6 +180,10 @@ async function createModerator(data: Record<string, unknown>, actor: Actor) {
     if (!error) {
       const moderator = Array.isArray(result) ? result[0] : result
       return { id: moderator.id, name: moderator.name, pin }
+    }
+    const errorContext = `${error.message} ${error.details ?? ''} ${error.hint ?? ''}`
+    if (errorContext.includes('moderators_name_unique_idx')) {
+      throw new Error('A moderator with this name already exists.')
     }
     if (error.code !== '23505') throw error
   }

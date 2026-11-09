@@ -28,7 +28,7 @@ QRoom is a React/Vite frontend backed entirely by Supabase: Postgres stores ques
    npx supabase functions deploy qroom-api
    ```
 
-For later backend updates, run `npx supabase db push --remote` to apply new migrations, then redeploy `qroom-api` when its source changes. The admin interface supports deleting individual moderators, permanently deleting all questions, and exporting all or selected questions to an Excel-readable `.xls` workbook. Destructive actions require confirmation.
+For later backend updates, run `npx supabase db push --remote` to apply new migrations, then redeploy `qroom-api` when its source changes. Moderator names are unique regardless of capitalization, and admin activity logs stream live through Supabase Realtime. The admin interface supports deleting individual moderators, permanently deleting all questions, and exporting all or selected questions to an Excel-readable `.xls` workbook. Destructive actions require confirmation.
 
 Never put the service-role key, admin PIN, or PIN index secret in the React `.env.local` or in source control. The frontend only needs the public Supabase URL and publishable/anon key.
 
