@@ -664,6 +664,7 @@ function AdminPortal() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [dialog, setDialog] = useState(null)
+  const [activeAdminTab, setActiveAdminTab] = useState('users')
   const copyPortalLink = async () => {
     const url = new URL(window.location.href)
     url.pathname = '/portal'
@@ -878,20 +879,31 @@ function AdminPortal() {
       </select>
       <button className="primary-button" disabled={saving || !name.trim()}>{saving ? 'Creating...' : `Create ${newRole}`}</button>
     </form>
-    <div className="admin-columns">
-      <section><h2>Users</h2>{loading ? <p>Loading users...</p> : moderators.map(user => <div className="moderator-row" key={user.id}>
-        <div className="moderator-identity"><strong>{user.name}</strong><span className={`moderator-status ${user.active ? 'active' : 'inactive'}`}><span aria-hidden="true" />{user.active ? 'Active' : 'Inactive'}</span><small className={user.hasPin ? 'pin-ready' : 'pin-missing'}>Code {user.hasPin ? 'configured' : 'missing'}</small></div>
-        <span className={`role-badge ${user.role || 'moderator'}`}>{user.role || 'moderator'}</span>
-        <select value={user.role || 'moderator'} disabled={saving || user.role === 'admin'} aria-label={`Role for ${user.name}`} onChange={event => changeRole(user, event.target.value)}>
-          <option value="moderator">Moderator</option>
-          <option value="viewer">Viewer</option>
-        </select>
-        <button className="pin-button" disabled={saving} onClick={() => resetPin(user)}>New code</button>
-        <button disabled={saving} className={user.active ? 'deactivate-button' : 'activate-button'} onClick={() => toggle(user)}>{user.active ? 'Deactivate' : 'Activate'}</button>
-        <button className="danger-button delete-moderator-button" disabled={saving || user.role === 'admin'} aria-label={`Delete ${user.name}`} onClick={() => deleteUser(user)}><Trash2 size={15} /> Delete</button>
-      </div>)}</section>
-      <section><h2>Recent activity</h2>{loading ? <p>Loading activity...</p> : logs.slice(0, 10).map(log => <div className="log-row" key={log.id}><span>{log.action}</span><small>{log.moderator_name || log.actor_name || 'Admin'} · {log.createdAt}</small></div>)}</section>
+    <div className="admin-tabs" role="tablist" aria-label="Team management">
+      <button id="admin-users-tab" className={activeAdminTab === 'users' ? 'active' : ''} type="button" role="tab" aria-selected={activeAdminTab === 'users'} aria-controls="admin-users-panel" onClick={() => setActiveAdminTab('users')}>Users</button>
+      <button id="admin-activity-tab" className={activeAdminTab === 'activity' ? 'active' : ''} type="button" role="tab" aria-selected={activeAdminTab === 'activity'} aria-controls="admin-activity-panel" onClick={() => setActiveAdminTab('activity')}>Activity logs</button>
     </div>
+    {activeAdminTab === 'users'
+      ? <section id="admin-users-panel" className="admin-tab-panel" role="tabpanel" aria-labelledby="admin-users-tab">
+        <h2>Users</h2>
+        {loading ? <p>Loading users...</p> : moderators.map(user => <div className="moderator-row" key={user.id}>
+          <div className="moderator-identity"><strong>{user.name}</strong><span className={`moderator-status ${user.active ? 'active' : 'inactive'}`}><span aria-hidden="true" />{user.active ? 'Active' : 'Inactive'}</span><small className={user.hasPin ? 'pin-ready' : 'pin-missing'}>Code {user.hasPin ? 'configured' : 'missing'}</small></div>
+          <div className="moderator-actions">
+            <span className={`role-badge ${user.role || 'moderator'}`}>{user.role || 'moderator'}</span>
+            <select value={user.role || 'moderator'} disabled={saving || user.role === 'admin'} aria-label={`Role for ${user.name}`} onChange={event => changeRole(user, event.target.value)}>
+              <option value="moderator">Moderator</option>
+              <option value="viewer">Viewer</option>
+            </select>
+            <button className="pin-button" disabled={saving} onClick={() => resetPin(user)}>New code</button>
+            <button disabled={saving} className={user.active ? 'deactivate-button' : 'activate-button'} onClick={() => toggle(user)}>{user.active ? 'Deactivate' : 'Activate'}</button>
+            <button className="danger-button delete-moderator-button" disabled={saving || user.role === 'admin'} aria-label={`Delete ${user.name}`} onClick={() => deleteUser(user)}><Trash2 size={15} /> Delete</button>
+          </div>
+        </div>)}
+      </section>
+      : <section id="admin-activity-panel" className="admin-tab-panel" role="tabpanel" aria-labelledby="admin-activity-tab">
+        <h2>Recent activity</h2>
+        {loading ? <p>Loading activity...</p> : logs.slice(0, 10).map(log => <div className="log-row" key={log.id}><span>{log.action}</span><small>{log.moderator_name || log.actor_name || 'Admin'} · {log.createdAt}</small></div>)}
+      </section>}
     <ActionDialog dialog={dialog} onClose={() => setDialog(null)} saving={saving} />
   </main>
 }
