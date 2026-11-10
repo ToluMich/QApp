@@ -20,7 +20,7 @@ const publicClient = createClient(supabaseUrl, anonKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 })
 
-type Actor = { userId: string; role: 'admin' | 'moderator'; moderatorId: string | null; name: string }
+type Actor = { userId: string; role: 'admin' | 'moderator' | 'viewer'; moderatorId: string | null; name: string }
 
 function respond(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -43,6 +43,10 @@ function equalSecret(actual: string, expected: string) {
   return left.length === right.length && timingSafeEqual(left, right)
 }
 
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value)
+}
+
 function randomPin() {
   const values = new Uint8Array(8)
   crypto.getRandomValues(values)
@@ -50,6 +54,12 @@ function randomPin() {
   for (const byte of values) number = (number << 8n) | BigInt(byte)
   number %= 1_000_000n
   return number.toString().padStart(6, '0')
+}
+
+function randomUserPin() {
+  let pin = randomPin()
+  while (adminPin && equalSecret(pin, adminPin)) pin = randomPin()
+  return pin
 }
 
 async function pinDigest(pin: string) {
@@ -89,12 +99,12 @@ async function getActor(userId: string): Promise<Actor | null> {
 
   const { data: moderator, error: moderatorError } = await admin
     .from('moderators')
-    .select('id, name, active')
+    .select('id, name, active, assigned_role')
     .eq('id', session.moderator_id)
     .maybeSingle()
   if (moderatorError) throw moderatorError
-  if (!moderator?.active) return null
-  return { userId, role: 'moderator', moderatorId: moderator.id, name: moderator.name }
+  if (!moderator?.active || moderator.assigned_role !== session.role) return null
+  return { userId, role: session.role, moderatorId: moderator.id, name: moderator.name }
 }
 
 async function requireActor(userId: string, allowed: Actor['role'][]): Promise<Actor> {
@@ -135,6 +145,46 @@ async function loginAdmin(request: Request, data: Record<string, unknown>, userI
   return { role: 'admin', name: 'Admin' }
 }
 
+async function login(request: Request, data: Record<string, unknown>, userId: string) {
+  const fingerprint = await checkLoginRateLimit(request)
+  const pin = String(data.pin ?? '')
+  if (!/^\d{6}$/.test(pin)) {
+    await admin.rpc('qroom_record_pin_failure', { p_fingerprint: fingerprint })
+    throw new Error('Invalid access code.')
+  }
+
+  if (adminPin && equalSecret(pin, adminPin)) {
+    const { error } = await admin.from('user_sessions').upsert({
+      user_id: userId,
+      role: 'admin',
+      moderator_id: null,
+      expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    })
+    if (error) throw error
+    const { error: logError } = await admin.from('activity_logs').insert({ action: 'admin.login', actor_name: 'Admin' })
+    if (logError) throw logError
+    const { error: clearError } = await admin.rpc('qroom_clear_pin_failures', { p_fingerprint: fingerprint })
+    if (clearError) throw clearError
+    return { role: 'admin', name: 'Admin' }
+  }
+
+  const digest = await pinDigest(pin)
+  const { data: rows, error } = await admin.rpc('qroom_login_user', {
+    p_user_id: userId,
+    p_pin: pin,
+    p_pin_digest: digest,
+  })
+  if (error) throw error
+  const user = Array.isArray(rows) ? rows[0] : rows
+  if (!user?.user_id || !['moderator', 'viewer'].includes(user.assigned_role)) {
+    await admin.rpc('qroom_record_pin_failure', { p_fingerprint: fingerprint })
+    throw new Error('Invalid or inactive access code.')
+  }
+  const { error: clearError } = await admin.rpc('qroom_clear_pin_failures', { p_fingerprint: fingerprint })
+  if (clearError) throw clearError
+  return { role: user.assigned_role, name: user.user_name }
+}
+
 async function loginModerator(request: Request, data: Record<string, unknown>, userId: string) {
   const fingerprint = await checkLoginRateLimit(request)
   const pin = String(data.pin ?? '')
@@ -159,9 +209,12 @@ async function loginModerator(request: Request, data: Record<string, unknown>, u
   return { role: 'moderator', name: moderator.moderator_name }
 }
 
-async function createModerator(data: Record<string, unknown>, actor: Actor) {
-  const name = String(data.name ?? '').trim()
-  if (!name || name.length > 80) throw new Error('Enter a moderator name between 1 and 80 characters.')
+async function createUser(data: Record<string, unknown>, actor: Actor, defaultRole?: 'moderator') {
+  if (typeof data.name !== 'string') throw new Error('A name is required.')
+  const name = data.name.trim()
+  if (!name || name.length > 80) throw new Error('Enter a name between 1 and 80 characters.')
+  const role = data.role ?? defaultRole
+  if (role !== 'moderator' && role !== 'viewer') throw new Error('Choose a moderator or viewer role.')
   const { data: existingModerators, error: lookupError } = await admin.from('moderators').select('name')
   if (lookupError) throw lookupError
   if ((existingModerators ?? []).some(moderator => moderator.name.trim().toLowerCase() === name.toLowerCase())) {
@@ -169,17 +222,18 @@ async function createModerator(data: Record<string, unknown>, actor: Actor) {
   }
 
   for (let attempt = 0; attempt < 8; attempt += 1) {
-    const pin = randomPin()
+    const pin = randomUserPin()
     const digest = await pinDigest(pin)
-    const { data: result, error } = await admin.rpc('qroom_create_moderator', {
+    const { data: result, error } = await admin.rpc('qroom_create_user', {
       p_actor_id: actor.userId,
       p_name: name,
+      p_role: role,
       p_pin: pin,
       p_pin_digest: digest,
     })
     if (!error) {
       const moderator = Array.isArray(result) ? result[0] : result
-      return { id: moderator.id, name: moderator.name, pin }
+      return { id: moderator.id, name: moderator.name, role: moderator.assigned_role, pin }
     }
     const errorContext = `${error.message} ${error.details ?? ''} ${error.hint ?? ''}`
     if (errorContext.includes('moderators_name_unique_idx')) {
@@ -190,9 +244,27 @@ async function createModerator(data: Record<string, unknown>, actor: Actor) {
   throw new Error('Could not allocate a unique PIN. Please try again.')
 }
 
+async function updateUserRole(data: Record<string, unknown>, actor: Actor) {
+  const userId = String(data.userId ?? data.moderatorId ?? '').trim()
+  const role = data.role
+  if (!isUuid(userId)) throw new Error('A valid user ID is required.')
+  if (role !== 'moderator' && role !== 'viewer') throw new Error('Choose a moderator or viewer role.')
+  const { data: result, error } = await admin.rpc('qroom_update_user_role', {
+    p_actor_id: actor.userId,
+    p_user_id: userId,
+    p_role: role,
+  })
+  if (error) throw error
+  const user = Array.isArray(result) ? result[0] : result
+  return { user: { ...user, role: user.assigned_role } }
+}
+
 async function updateModerator(data: Record<string, unknown>, actor: Actor) {
   const moderatorId = String(data.moderatorId ?? '')
-  if (!moderatorId) throw new Error('Moderator ID is required.')
+  if (!isUuid(moderatorId)) throw new Error('A valid user ID is required.')
+  if (data.generatePin !== undefined && typeof data.generatePin !== 'boolean') {
+    throw new Error('PIN generation must be a boolean value.')
+  }
   if (!data.generatePin && typeof data.active !== 'boolean') {
     throw new Error('Specify whether the moderator should be active.')
   }
@@ -200,7 +272,7 @@ async function updateModerator(data: Record<string, unknown>, actor: Actor) {
   let digest: string | null = null
   if (data.generatePin) {
     for (let attempt = 0; attempt < 8; attempt += 1) {
-      pin = randomPin()
+      pin = randomUserPin()
       digest = await pinDigest(pin)
       const { data: result, error } = await admin.rpc('qroom_update_moderator', {
         p_actor_id: actor.userId,
@@ -231,21 +303,29 @@ async function updateModerator(data: Record<string, unknown>, actor: Actor) {
 
 async function listAdminData() {
   const [moderatorsResult, logsResult] = await Promise.all([
-    admin.from('moderators').select('id, name, active, created_at').order('created_at', { ascending: false }),
-    admin.from('activity_logs').select('id, action, actor_name, moderator_name, question_id, created_at').order('created_at', { ascending: false }).limit(100),
+    admin.from('moderators').select('id, name, active, assigned_role, created_at').order('created_at', { ascending: false }),
+    admin.from('activity_logs').select('id, action, actor_name, moderator_name, question_id, created_at').order('created_at', { ascending: false }).order('id', { ascending: false }).limit(10),
   ])
   if (moderatorsResult.error) throw moderatorsResult.error
   if (logsResult.error) throw logsResult.error
+  const users = (moderatorsResult.data ?? []).map(user => ({
+    ...user,
+    role: user.assigned_role,
+    hasPin: true,
+  }))
   return {
-    moderators: (moderatorsResult.data ?? []).map(moderator => ({ ...moderator, hasPin: true })),
+    users,
+    moderators: users,
     logs: (logsResult.data ?? []).map(log => ({ ...log, createdAt: log.created_at })),
   }
 }
 
 async function markQuestionAnswered(data: Record<string, unknown>, actor: Actor) {
+  const questionId = String(data.questionId ?? '')
+  if (!isUuid(questionId)) throw new Error('A valid question ID is required.')
   const { error } = await admin.rpc('qroom_mark_answered', {
     p_user_id: actor.userId,
-    p_question_id: String(data.questionId ?? ''),
+    p_question_id: questionId,
   })
   if (error) throw error
   return { success: true }
@@ -253,19 +333,41 @@ async function markQuestionAnswered(data: Record<string, unknown>, actor: Actor)
 
 async function reopenQuestion(data: Record<string, unknown>, actor: Actor) {
   if (actor.role !== 'admin') throw new Error('Only admins can reopen questions.')
+  const questionId = String(data.questionId ?? '')
+  if (!isUuid(questionId)) throw new Error('A valid question ID is required.')
   const { error } = await admin.rpc('qroom_reopen_question', {
     p_user_id: actor.userId,
-    p_question_id: String(data.questionId ?? ''),
+    p_question_id: questionId,
   })
   if (error) throw error
   return { success: true }
 }
 
+async function deleteSelectedQuestions(data: Record<string, unknown>, actor: Actor) {
+  if (!Array.isArray(data.questionIds) || data.questionIds.length < 1 || data.questionIds.length > 500) {
+    throw new Error('Select between 1 and 500 questions to delete.')
+  }
+  const questionIds = [...new Set(data.questionIds.map(id => String(id)))]
+  if (questionIds.length !== data.questionIds.length || questionIds.some(id => !isUuid(id))) {
+    throw new Error('Question IDs must be unique valid IDs.')
+  }
+  const { data: deleted, error } = await admin.rpc('qroom_delete_selected_questions', {
+    p_actor_id: actor.userId,
+    p_question_ids: questionIds,
+  })
+  if (error) throw error
+  return { deleted }
+}
+
 async function handleAction(request: Request, action: string, data: Record<string, unknown>, userId: string) {
+  if (action === 'login') return login(request, data, userId)
   if (action === 'loginAdmin') return loginAdmin(request, data, userId)
   if (action === 'loginModerator') return loginModerator(request, data, userId)
   if (action === 'logout') {
-    const { error } = await admin.from('user_sessions').delete().eq('user_id', userId)
+    const { error } = await admin
+      .from('user_sessions')
+      .update({ expires_at: new Date(0).toISOString() })
+      .eq('user_id', userId)
     if (error) throw error
     return { success: true }
   }
@@ -274,18 +376,22 @@ async function handleAction(request: Request, action: string, data: Record<strin
     return actor ? { role: actor.role, name: actor.name } : { role: null, name: null }
   }
 
-  if (action === 'createModerator') {
+  if (action === 'createUser' || action === 'createModerator') {
     const actor = await requireActor(userId, ['admin'])
-    return createModerator(data, actor)
+    return createUser(data, actor, action === 'createModerator' ? 'moderator' : undefined)
+  }
+  if (action === 'updateUserRole' || action === 'changeUserRole') {
+    const actor = await requireActor(userId, ['admin'])
+    return updateUserRole(data, actor)
   }
   if (action === 'updateModerator') {
     const actor = await requireActor(userId, ['admin'])
     return updateModerator(data, actor)
   }
-  if (action === 'deleteModerator') {
+  if (action === 'deleteModerator' || action === 'deleteUser') {
     const actor = await requireActor(userId, ['admin'])
-    const moderatorId = String(data.moderatorId ?? '')
-    if (!moderatorId) throw new Error('Moderator ID is required.')
+    const moderatorId = String(data.userId ?? data.moderatorId ?? '')
+    if (!isUuid(moderatorId)) throw new Error('A valid user ID is required.')
     const { error } = await admin.rpc('qroom_delete_moderator', {
       p_actor_id: actor.userId,
       p_moderator_id: moderatorId,
@@ -300,6 +406,10 @@ async function handleAction(request: Request, action: string, data: Record<strin
     })
     if (error) throw error
     return { deleted }
+  }
+  if (action === 'deleteSelectedQuestions') {
+    const actor = await requireActor(userId, ['admin'])
+    return deleteSelectedQuestions(data, actor)
   }
   if (action === 'updateAllModerators') {
     const actor = await requireActor(userId, ['admin'])
@@ -333,7 +443,9 @@ Deno.serve(async request => {
   try {
     const { user } = await authenticatedUser(request)
     const body = await request.json()
-    const result = await handleAction(request, String(body.action ?? ''), body, user.id)
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Request body must be an object.')
+    if (typeof body.action !== 'string' || !body.action.trim()) throw new Error('An action is required.')
+    const result = await handleAction(request, body.action, body, user.id)
     return respond({ ok: true, ...result })
   } catch (error) {
     console.error('qroom-api error:', error)

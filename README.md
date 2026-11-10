@@ -28,7 +28,7 @@ MicMe is a React/Vite frontend backed entirely by Supabase: Postgres stores ques
    npx supabase functions deploy qroom-api
    ```
 
-For later backend updates, run `npx supabase db push --remote` to apply new migrations, then redeploy `qroom-api` when its source changes. Moderator names are unique regardless of capitalization, and admin activity logs stream live through Supabase Realtime. The admin interface supports deleting individual moderators, permanently deleting all questions, and exporting all or selected questions to an Excel-readable `.xls` workbook. Destructive actions require confirmation.
+For later backend updates, run `npx supabase db push --remote` to apply new migrations, then redeploy `qroom-api` when its source changes. All staff use the shared `/portal` URL and enter the access code they were given; the server determines their role. Admins create moderator or viewer accounts and can switch between those roles; role changes invalidate the user's active portal session. Moderators can answer questions, viewers can only read questions, and admins manage the team and queue. Moderator names are unique regardless of capitalization, and admin activity logs stream live through Supabase Realtime with only the latest 10 shown. The admin interface supports deleting selected or all questions, deleting users, and exporting questions to an Excel-readable `.xls` workbook. Destructive actions require confirmation.
 
 Admins can also open **QR Studio** to generate PNG QR codes for arbitrary text or URLs. QR content is encoded in the browser only; it is not sent to Supabase or stored by MicMe. The image can be downloaded or shared through the browser's native file-sharing support.
 
@@ -41,7 +41,7 @@ npm.cmd install
 npm.cmd run dev
 ```
 
-Open the localhost URL Vite prints. The frontend talks directly to Supabase. Anonymous Auth is used to establish a browser session; the Edge Function validates PINs and grants server-side application sessions. Live question updates use Supabase Realtime, protected by Postgres RLS. The new Supabase database starts empty; no old Firebase questions or moderator records are imported.
+Open the localhost URL Vite prints. Staff access is at `http://localhost:5173/portal` (use the actual port printed by Vite). The frontend talks directly to Supabase. Anonymous Auth is used to establish a browser session; the Edge Function validates access codes and grants server-side application sessions. Live question updates use Supabase Realtime, protected by Postgres RLS. Question text is normalized and stripped of control/format characters on input, rendered as plain text, and constrained in the database. The new Supabase database starts empty; no old Firebase questions or moderator records are imported.
 
 ## Deploy the frontend later
 
