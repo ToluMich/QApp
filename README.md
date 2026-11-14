@@ -30,6 +30,10 @@ MicMe is a React/Vite frontend backed entirely by Supabase: Postgres stores ques
 
 For later backend updates, run `npx supabase db push --remote` to apply new migrations, then redeploy `qroom-api` when its source changes. All staff use the shared `/portal` URL and enter the access code they were given; the server determines their role. Admins create moderator or viewer accounts and can switch between those roles; role changes invalidate the user's active portal session. Moderators can answer questions, viewers can only read questions, and admins manage the team and queue. Moderator names are unique regardless of capitalization, and admin activity logs stream live through Supabase Realtime with only the latest 10 shown. The admin interface supports deleting selected or all questions, deleting users, and exporting questions to an Excel-readable `.xls` workbook. Destructive actions require confirmation.
 
+Admins can pause or resume question submissions from the Questions overview. The setting is enforced by Postgres, so submissions remain blocked even if a visitor has an already-open form. Questions and active staff sessions store basic browser metadata (user agent, platform, and language); MicMe does not create a persistent device fingerprint.
+
+Question text and other user values are sent through Supabase's query builder or RPC parameters, not concatenated into SQL. Keep that pattern: validate types and lengths, enforce authorization and RLS in the backend, and never build SQL statements from user input. Character filtering is useful for input quality, but parameterized queries are what prevent SQL injection.
+
 Admins can also open **QR Studio** to generate PNG QR codes for arbitrary text or URLs. QR content is encoded in the browser only; it is not sent to Supabase or stored by MicMe. The image can be downloaded or shared through the browser's native file-sharing support.
 
 Never put the service-role key, admin PIN, or PIN index secret in the React `.env.local` or in source control. The frontend only needs the public Supabase URL and publishable/anon key.

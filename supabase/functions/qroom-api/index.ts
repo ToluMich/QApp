@@ -43,6 +43,25 @@ function equalSecret(actual: string, expected: string) {
   return left.length === right.length && timingSafeEqual(left, right)
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function getDeviceInfo(request: Request, data: Record<string, unknown>) {
+  const provided = isRecord(data.deviceInfo) ? data.deviceInfo : {}
+  const text = (value: unknown, limit: number) => typeof value === 'string' ? value.slice(0, limit) : ''
+  return {
+    userAgent: text(request.headers.get('user-agent') || provided.userAgent, 512),
+    platform: text(provided.platform, 128),
+    language: text(provided.language, 32),
+  }
+}
+
+async function saveSessionDeviceInfo(userId: string, deviceInfo: ReturnType<typeof getDeviceInfo>) {
+  const { error } = await admin.from('user_sessions').update({ device_info: deviceInfo }).eq('user_id', userId)
+  if (error) throw error
+}
+
 function isUuid(value: string) {
   return /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value)
 }
@@ -136,6 +155,7 @@ async function loginAdmin(request: Request, data: Record<string, unknown>, userI
     role: 'admin',
     moderator_id: null,
     expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    device_info: getDeviceInfo(request, data),
   })
   if (error) throw error
   const { error: clearError } = await admin.rpc('qroom_clear_pin_failures', { p_fingerprint: fingerprint })
@@ -148,6 +168,7 @@ async function loginAdmin(request: Request, data: Record<string, unknown>, userI
 async function login(request: Request, data: Record<string, unknown>, userId: string) {
   const fingerprint = await checkLoginRateLimit(request)
   const pin = String(data.pin ?? '')
+  const deviceInfo = getDeviceInfo(request, data)
   if (!/^\d{6}$/.test(pin)) {
     await admin.rpc('qroom_record_pin_failure', { p_fingerprint: fingerprint })
     throw new Error('Invalid access code.')
@@ -159,6 +180,7 @@ async function login(request: Request, data: Record<string, unknown>, userId: st
       role: 'admin',
       moderator_id: null,
       expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      device_info: deviceInfo,
     })
     if (error) throw error
     const { error: logError } = await admin.from('activity_logs').insert({ action: 'admin.login', actor_name: 'Admin' })
@@ -180,6 +202,7 @@ async function login(request: Request, data: Record<string, unknown>, userId: st
     await admin.rpc('qroom_record_pin_failure', { p_fingerprint: fingerprint })
     throw new Error('Invalid or inactive access code.')
   }
+  await saveSessionDeviceInfo(userId, deviceInfo)
   const { error: clearError } = await admin.rpc('qroom_clear_pin_failures', { p_fingerprint: fingerprint })
   if (clearError) throw clearError
   return { role: user.assigned_role, name: user.user_name }
@@ -204,6 +227,7 @@ async function loginModerator(request: Request, data: Record<string, unknown>, u
     await admin.rpc('qroom_record_pin_failure', { p_fingerprint: fingerprint })
     throw new Error('Invalid or inactive moderator PIN.')
   }
+  await saveSessionDeviceInfo(userId, getDeviceInfo(request, data))
   const { error: clearError } = await admin.rpc('qroom_clear_pin_failures', { p_fingerprint: fingerprint })
   if (clearError) throw clearError
   return { role: 'moderator', name: moderator.moderator_name }
@@ -304,7 +328,7 @@ async function updateModerator(data: Record<string, unknown>, actor: Actor) {
 async function listAdminData() {
   const [moderatorsResult, logsResult] = await Promise.all([
     admin.from('moderators').select('id, name, active, assigned_role, created_at').order('created_at', { ascending: false }),
-    admin.from('activity_logs').select('id, action, actor_name, moderator_name, question_id, created_at').order('created_at', { ascending: false }).order('id', { ascending: false }).limit(10),
+    admin.from('activity_logs').select('id, action, actor_name, moderator_name, question_id, created_at').order('created_at', { ascending: false }).order('id', { ascending: false }).limit(11),
   ])
   if (moderatorsResult.error) throw moderatorsResult.error
   if (logsResult.error) throw logsResult.error
@@ -316,8 +340,52 @@ async function listAdminData() {
   return {
     users,
     moderators: users,
-    logs: (logsResult.data ?? []).map(log => ({ ...log, createdAt: log.created_at })),
+    logs: (logsResult.data ?? []).slice(0, 10).map(log => ({ ...log, createdAt: log.created_at })),
+    hasMoreLogs: (logsResult.data ?? []).length > 10,
   }
+}
+
+async function listMoreActivityLogs(data: Record<string, unknown>) {
+  const beforeId = String(data.beforeId ?? '')
+  const beforeCreatedAt = data.beforeCreatedAt
+  if (!/^[1-9]\d*$/.test(beforeId)
+    || typeof beforeCreatedAt !== 'string'
+    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.test(beforeCreatedAt)
+    || Number.isNaN(new Date(beforeCreatedAt).getTime())) {
+    throw new Error('A valid activity log cursor is required.')
+  }
+
+  const { data: rows, error } = await admin.from('activity_logs')
+    .select('id, action, actor_name, moderator_name, question_id, created_at')
+    .or(`created_at.lt.${beforeCreatedAt},and(created_at.eq.${beforeCreatedAt},id.lt.${beforeId})`)
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(11)
+  if (error) throw error
+  const page = rows ?? []
+  return {
+    logs: page.slice(0, 10).map(log => ({ ...log, createdAt: log.created_at })),
+    hasMoreLogs: page.length > 10,
+  }
+}
+
+async function getQuestionSubmissionStatus() {
+  const { data, error } = await admin.from('qroom_settings')
+    .select('accepting_questions')
+    .eq('id', true)
+    .single()
+  if (error) throw error
+  return { acceptingQuestions: data.accepting_questions }
+}
+
+async function updateQuestionSubmissionStatus(acceptingQuestions: boolean) {
+  const { data, error } = await admin.from('qroom_settings')
+    .update({ accepting_questions: acceptingQuestions, updated_at: new Date().toISOString() })
+    .eq('id', true)
+    .select('accepting_questions')
+    .single()
+  if (error) throw error
+  return { acceptingQuestions: data.accepting_questions }
 }
 
 async function markQuestionAnswered(data: Record<string, unknown>, actor: Actor) {
@@ -375,6 +443,12 @@ async function handleAction(request: Request, action: string, data: Record<strin
     const actor = await getActor(userId)
     return actor ? { role: actor.role, name: actor.name } : { role: null, name: null }
   }
+  if (action === 'getQuestionSubmissionStatus') return getQuestionSubmissionStatus()
+  if (action === 'updateQuestionSubmissionStatus') {
+    await requireActor(userId, ['admin'])
+    if (typeof data.acceptingQuestions !== 'boolean') throw new Error('Submission status must be a boolean value.')
+    return updateQuestionSubmissionStatus(data.acceptingQuestions)
+  }
 
   if (action === 'createUser' || action === 'createModerator') {
     const actor = await requireActor(userId, ['admin'])
@@ -424,6 +498,10 @@ async function handleAction(request: Request, action: string, data: Record<strin
   if (action === 'listAdminData') {
     await requireActor(userId, ['admin'])
     return listAdminData()
+  }
+  if (action === 'listMoreActivityLogs') {
+    await requireActor(userId, ['admin'])
+    return listMoreActivityLogs(data)
   }
   if (action === 'markQuestionAnswered') {
     const actor = await requireActor(userId, ['admin', 'moderator'])

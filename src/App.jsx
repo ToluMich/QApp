@@ -12,9 +12,38 @@ function reportError(context, error) {
   console.error(`[MicMe] ${context}`, error)
 }
 
+async function copyTextToClipboard(value) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value)
+      return
+    }
+  } catch {
+    // Fall back for browsers or contexts that block the Clipboard API.
+  }
+
+  const textArea = document.createElement('textarea')
+  const previousFocus = document.activeElement
+  textArea.value = value
+  textArea.setAttribute('readonly', '')
+  textArea.style.position = 'fixed'
+  textArea.style.top = '-1000px'
+  textArea.style.left = '-1000px'
+  document.body.append(textArea)
+  try {
+    textArea.focus()
+    textArea.select()
+    textArea.setSelectionRange(0, textArea.value.length)
+    if (!document.execCommand('copy')) throw new Error('The browser could not copy the access code.')
+  } finally {
+    textArea.remove()
+    previousFocus?.focus?.()
+  }
+}
+
 function ActionDialog({ dialog, onClose, saving = false }) {
-  const [copied, setCopied] = useState(false)
-  const [copyError, setCopyError] = useState('')
+  const [copyFeedback, setCopyFeedback] = useState(null)
+  const [confirmError, setConfirmError] = useState(null)
   const confirmRef = useRef(null)
 
   useEffect(() => {
@@ -29,16 +58,16 @@ function ActionDialog({ dialog, onClose, saving = false }) {
 
   if (!dialog) return null
   const isPin = dialog.kind === 'pin'
+  const copied = copyFeedback?.dialog === dialog && copyFeedback.copied
+  const copyError = copyFeedback?.dialog === dialog ? copyFeedback.error : ''
 
   const copyPin = async () => {
     try {
-      await navigator.clipboard.writeText(dialog.pin)
-      setCopied(true)
-      setCopyError('')
+      await copyTextToClipboard(String(dialog.pin ?? ''))
+      setCopyFeedback({ dialog, copied: true, error: '' })
     } catch (error) {
       reportError('Could not copy access code', error)
-      setCopied(false)
-      setCopyError('Could not copy automatically. Select and copy the code above.')
+      setCopyFeedback({ dialog, copied: false, error: 'Could not copy automatically. Select and copy the code above.' })
     }
   }
 
@@ -54,12 +83,22 @@ function ActionDialog({ dialog, onClose, saving = false }) {
         <p id="action-dialog-description">{dialog.description}</p>
         {isPin && <div className="generated-pin" aria-label="New access code">{dialog.pin}</div>}
         {copyError && <p className="action-dialog-copy-error" role="status">{copyError}</p>}
+        {confirmError?.dialog === dialog && <p className="action-dialog-error" role="alert">{confirmError.message}</p>}
         <div className="action-dialog-actions">
           {isPin
             ? <button ref={confirmRef} className="primary-button" type="button" onClick={copyPin}><Copy size={17} />{copied ? 'Copied' : 'Copy access code'}</button>
             : <button ref={confirmRef} className={dialog.variant === 'danger' ? 'danger-button' : `primary-button ${dialog.variant === 'warning' ? 'warning-action' : dialog.variant === 'success' ? 'success-action' : ''}`} type="button" disabled={saving} onClick={async () => {
+              setConfirmError(null)
               const result = await dialog.onConfirm()
-              if (result !== false && result !== 'keep-open') onClose()
+              if (result && typeof result === 'object' && typeof result.error === 'string') {
+                setConfirmError({ dialog, message: result.error })
+                return
+              }
+              if (result === false) {
+                setConfirmError({ dialog, message: 'The action could not be completed. Please try again.' })
+                return
+              }
+              if (result !== 'keep-open') onClose()
             }}>{saving ? 'Please wait…' : dialog.confirmLabel || 'Confirm'}</button>}
           <button className="secondary-button" type="button" onClick={onClose} disabled={saving}>{isPin ? 'OK' : 'Cancel'}</button>
         </div>
@@ -73,6 +112,21 @@ function sanitizeQuestion(value) {
   return Array.from(value.normalize('NFKC').replace(/[\p{Cc}\p{Cf}]/gu, ''))
     .slice(0, 280)
     .join('')
+}
+
+function formatDateTime(value) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return `${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}, ${date.toLocaleTimeString()}`
+}
+
+function collectDeviceInfo() {
+  const platform = navigator.userAgentData?.platform || navigator.platform || ''
+  return {
+    userAgent: navigator.userAgent.slice(0, 512),
+    platform: platform.slice(0, 128),
+    language: navigator.language.slice(0, 32),
+  }
 }
 
 function Brand() {
@@ -227,6 +281,7 @@ function SubmissionDialog({ result, onClose }) {
 
   if (!result) return null
   const succeeded = result.type === 'success'
+  const closed = result.type === 'closed'
 
   return createPortal(
     <div className="submission-backdrop" onMouseDown={event => {
@@ -241,12 +296,14 @@ function SubmissionDialog({ result, onClose }) {
       >
         <button ref={closeButtonRef} className="submission-close" onClick={onClose} aria-label="Close message"><X size={19} /></button>
         <div className="submission-icon">{succeeded ? <Check size={30} /> : <AlertTriangle size={28} />}</div>
-        <p className="submission-eyebrow">{succeeded ? 'Question submitted' : 'Submission interrupted'}</p>
-        <h2 id="submission-title">{succeeded ? 'You’re all set.' : 'Your draft is safe.'}</h2>
+        <p className="submission-eyebrow">{succeeded ? 'Question submitted' : closed ? 'Submissions closed' : 'Submission interrupted'}</p>
+        <h2 id="submission-title">{succeeded ? 'You’re all set.' : closed ? 'Not accepting questions' : 'Your draft is safe.'}</h2>
         <p id="submission-description">{succeeded
           ? 'Your question is now live. A moderator will answer it shortly.'
-          : 'We couldn’t confirm that your question was sent. Your text is still in the box—check your connection and try again.'}</p>
-        <button className="primary-button submission-confirm" onClick={onClose}>{succeeded ? 'Done' : 'Back to my question'}</button>
+          : closed
+            ? 'Sorry, we are no longer accepting questions for now.'
+            : 'We couldn’t confirm that your question was sent. Your text is still in the box—check your connection and try again.'}</p>
+        <button className="primary-button submission-confirm" onClick={onClose}>{succeeded || closed ? 'OK' : 'Back to my question'}</button>
       </section>
     </div>,
     document.body,
@@ -263,12 +320,32 @@ function AskPage() {
     if (!submittedText || state === 'loading') return
     setState('loading')
     try {
-      const { error } = await supabase.from('questions').insert({ text: submittedText })
+      const { acceptingQuestions } = await apiCall('getQuestionSubmissionStatus')
+      if (!acceptingQuestions) {
+        setState('idle')
+        setSubmissionResult({ type: 'closed' })
+        return
+      }
+      const { error } = await supabase.from('questions').insert({
+        text: submittedText,
+        device_info: collectDeviceInfo(),
+      })
       if (error) throw error
       setText(current => current.trim() === submittedText ? '' : current)
       setState('success')
       setSubmissionResult({ type: 'success' })
-    } catch {
+    } catch (error) {
+      reportError('Could not submit question', error)
+      try {
+        const { acceptingQuestions } = await apiCall('getQuestionSubmissionStatus')
+        if (!acceptingQuestions) {
+          setState('idle')
+          setSubmissionResult({ type: 'closed' })
+          return
+        }
+      } catch (statusError) {
+        reportError('Could not verify question submission status', statusError)
+      }
       setState('error')
       setSubmissionResult({ type: 'error' })
     }
@@ -302,12 +379,12 @@ function PinLogin({ onLogin }) {
     event.preventDefault()
     setLoading(true); setError('')
     try {
-      const result = await apiCall('login', { pin })
+      const result = await apiCall('login', { pin, deviceInfo: collectDeviceInfo() })
       if (!['admin', 'moderator', 'viewer'].includes(result.role)) throw new Error('Invalid portal role.')
       onLogin({ role: result.role, name: result.name })
     } catch (error) {
       reportError('Sign-in failed', error)
-      setError('We couldn’t sign you in. Check your PIN and try again.')
+      setError('We couldn’t sign you in. Check your Access Code and try again.')
     }
     finally { setLoading(false) }
   }
@@ -330,6 +407,7 @@ function QuestionList({ role }) {
   const [busy, setBusy] = useState('')
   const [actionMessage, setActionMessage] = useState('')
   const [actionMessageType, setActionMessageType] = useState('info')
+  const [acceptingQuestions, setAcceptingQuestions] = useState(null)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [openQuestionId, setOpenQuestionId] = useState(null)
   const [dialog, setDialog] = useState(null)
@@ -340,6 +418,7 @@ function QuestionList({ role }) {
   const isAdmin = role === 'admin'
   const isViewer = role === 'viewer'
   const pageSize = 1000
+  const liveUpdatesWarning = 'Live updates are temporarily unavailable, please refresh and try again.'
   const loadQuestions = async () => {
     const allQuestions = []
     for (let from = 0; ; from += pageSize) {
@@ -362,34 +441,81 @@ function QuestionList({ role }) {
         setActionMessage('Questions could not be loaded. Please try again.')
       }
     })
-    const channel = supabase.channel(`qroom-questions-${role}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'questions' }, payload => {
-        if (payload.eventType === 'DELETE') {
-          setSelectedIds(selected => {
-            const next = new Set(selected)
-            next.delete(payload.old.id)
-            return next
+    let channel
+    let retryTimer
+    let retryCount = 0
+    let retryScheduled = false
+    const connect = () => {
+      retryScheduled = false
+      const currentChannel = supabase.channel(`qroom-questions-${role}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'questions' }, payload => {
+          if (payload.eventType === 'DELETE') {
+            setSelectedIds(selected => {
+              const next = new Set(selected)
+              next.delete(payload.old.id)
+              return next
+            })
+            setQuestions(current => current.filter(question => question.id !== payload.old.id))
+            return
+          }
+          setQuestions(current => {
+            const updated = payload.new
+            return [updated, ...current.filter(question => question.id !== updated.id)]
+              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
           })
-          setQuestions(current => current.filter(question => question.id !== payload.old.id))
+      })
+      channel = currentChannel
+      currentChannel.subscribe(status => {
+        if (!active || channel !== currentChannel) return
+        if (status === 'SUBSCRIBED') {
+          retryCount = 0
+          retryScheduled = false
+          window.clearTimeout(retryTimer)
+          setActionMessage(current => current === liveUpdatesWarning ? '' : current)
           return
         }
-        setQuestions(current => {
-          const updated = payload.new
-          return [updated, ...current.filter(question => question.id !== updated.id)]
-            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-        })
-      })
-      .subscribe(status => {
-        if (status === 'CHANNEL_ERROR' && active) {
+        if (!['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status) || retryScheduled) return
+        if (retryCount >= 5) {
           setActionMessageType('warning')
-          setActionMessage('Live updates are temporarily unavailable. Please refresh to try again.')
+          setActionMessage(liveUpdatesWarning)
+          return
         }
+        retryScheduled = true
+        retryCount += 1
+        retryTimer = window.setTimeout(async () => {
+          retryTimer = null
+          try {
+            await supabase.removeChannel(currentChannel)
+            if (active && channel === currentChannel) connect()
+          } catch (error) {
+            if (!active) return
+            reportError('Could not reconnect live question updates', error)
+            setActionMessageType('warning')
+            setActionMessage(liveUpdatesWarning)
+          }
+        }, Math.min(1000 * (2 ** (retryCount - 1)), 8000))
       })
+    }
+    connect()
     return () => {
       active = false
-      supabase.removeChannel(channel)
+      window.clearTimeout(retryTimer)
+      if (channel) supabase.removeChannel(channel)
     }
   }, [role])
+  useEffect(() => {
+    if (!isAdmin) return undefined
+    let active = true
+    apiCall('getQuestionSubmissionStatus')
+      .then(result => { if (active) setAcceptingQuestions(result.acceptingQuestions) })
+      .catch(error => {
+        if (!active) return
+        reportError('Could not load question submission status', error)
+        setActionMessageType('error')
+        setActionMessage('Question submission status could not be loaded.')
+      })
+    return () => { active = false }
+  }, [isAdmin])
   const openQuestion = questions.find(question => question.id === openQuestionId) || null
   useLayoutEffect(() => {
     if (!openQuestion || !modalRef.current || !questionTextRef.current || !questionTextContainerRef.current) return undefined
@@ -446,8 +572,15 @@ function QuestionList({ role }) {
       previousFocus?.focus?.()
     }
   }, [openQuestion])
-  const visible = useMemo(() => questions.filter(q => q.status === tab && q.text?.toLowerCase().includes(search.toLowerCase())), [questions, tab, search])
+  const visible = useMemo(() => questions
+    .filter(question => question.status === tab && question.text?.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => new Date(tab === 'answered' ? b.answered_at || b.created_at : b.created_at)
+      - new Date(tab === 'answered' ? a.answered_at || a.created_at : a.created_at)), [questions, tab, search])
   const selectedQuestions = questions.filter(question => selectedIds.has(question.id))
+  const deviceInfo = openQuestion?.device_info && typeof openQuestion.device_info === 'object' && !Array.isArray(openQuestion.device_info)
+    ? openQuestion.device_info
+    : {}
+  const hasDeviceInfo = Boolean(deviceInfo.userAgent || deviceInfo.platform || deviceInfo.language)
   const toggleQuestionSelection = (questionId, checked) => {
     setSelectedIds(current => {
       const next = new Set(current)
@@ -478,9 +611,9 @@ function QuestionList({ role }) {
     const dataRows = rows.map(question => [
       question.text,
       question.status,
-      question.created_at ? new Date(question.created_at).toLocaleString() : '',
+      formatDateTime(question.created_at),
       question.answered_by_name || '',
-      question.answered_at ? new Date(question.answered_at).toLocaleString() : '',
+      formatDateTime(question.answered_at),
     ])
     const rowXml = [columns, ...dataRows].map(row => `<Row>${row.map(cell =>
       `<Cell><Data ss:Type="String">${xmlEscape(cell)}</Data></Cell>`,
@@ -512,22 +645,17 @@ function QuestionList({ role }) {
       setQuestions([])
       setSelectedIds(new Set())
       setOpenQuestionId(null)
-      try {
-        setQuestions(await loadQuestions())
-      } catch (error) {
-        reportError('Could not refresh questions after deletion', error)
-        setActionMessageType('warning')
-        setActionMessage(`Deleted ${result.deleted ?? 0} questions, but the list could not be refreshed. Please refresh the page.`)
-        return
-      }
       setActionMessageType('success')
       setActionMessage(`Deleted ${result.deleted ?? 0} question${result.deleted === 1 ? '' : 's'}.`)
       return true
     } catch (error) {
       reportError('Could not delete questions', error)
       setActionMessageType('error')
-      setActionMessage('Questions could not be deleted. Please try again.')
-      return false
+      const message = error instanceof Error
+        ? `Questions could not be deleted: ${error.message}`
+        : 'Questions could not be deleted. Please try again.'
+      setActionMessage(message)
+      return { error: message }
     } finally {
       setBusy('')
     }
@@ -572,9 +700,22 @@ function QuestionList({ role }) {
     }
     finally { setBusy('') }
   }
-  const date = value => {
-    if (typeof value === 'string') return new Date(value).toLocaleString()
-    return ''
+  const updateQuestionSubmissionStatus = async accepting => {
+    setBusy('submissions')
+    try {
+      const result = await apiCall('updateQuestionSubmissionStatus', { acceptingQuestions: accepting })
+      setAcceptingQuestions(result.acceptingQuestions)
+      setActionMessageType('success')
+      setActionMessage(accepting ? 'Question submissions are open.' : 'Question submissions are closed.')
+      return true
+    } catch (error) {
+      reportError('Could not update question submission status', error)
+      setActionMessageType('error')
+      setActionMessage('Question submission status could not be updated. Please try again.')
+      return false
+    } finally {
+      setBusy('')
+    }
   }
   return <main className="dashboard">
     <header className="dashboard-head"><div><p className="eyebrow">{role === 'admin' ? 'Control center' : isViewer ? 'Read-only access' : 'Live queue'}</p><h1>{role === 'admin' ? 'Questions overview' : isViewer ? 'Question viewer' : 'Moderator desk'}</h1></div>
@@ -592,6 +733,15 @@ function QuestionList({ role }) {
         <span>{selectedIds.size} selected</span>
       </div>
       <div className="question-tool-actions">
+        <button className={`secondary-button submission-toggle-button ${acceptingQuestions === null ? '' : acceptingQuestions ? 'stop' : 'resume'}`} disabled={acceptingQuestions === null || Boolean(busy)} onClick={() => setDialog({
+          variant: acceptingQuestions ? 'warning' : 'success',
+          title: acceptingQuestions ? 'Stop accepting questions?' : 'Start accepting questions?',
+          description: acceptingQuestions
+            ? 'Visitors and staff will not be able to submit questions until submissions are reopened.'
+            : 'Visitors and staff will be able to submit questions again.',
+          confirmLabel: acceptingQuestions ? 'Stop submissions' : 'Start submissions',
+          onConfirm: () => updateQuestionSubmissionStatus(!acceptingQuestions),
+        })}>{acceptingQuestions === null ? 'Loading submissions…' : acceptingQuestions ? 'Stop submissions' : 'Resume submissions'}</button>
         <button className="secondary-button" disabled={!selectedQuestions.length} onClick={() => exportExcel(selectedQuestions)}><FileSpreadsheet size={16} /> Export selected</button>
         <button className="danger-button" disabled={!selectedQuestions.length || busy === 'selected'} onClick={() => setDialog({
           variant: 'danger',
@@ -620,8 +770,8 @@ function QuestionList({ role }) {
     }} style={{ '--delay': `${Math.min(index * 45, 300)}ms` }}>
       {isAdmin && <input className="question-select" type="checkbox" aria-label={`Select question: ${question.text}`} checked={selectedIds.has(question.id)} onClick={event => event.stopPropagation()} onChange={event => toggleQuestionSelection(question.id, event.target.checked)} />}
       <div className={`status-dot ${question.status}`}><CircleDot size={17} /></div>
-      <div className="question-body"><div className="question-meta"><span>{statusText[question.status]}</span><time>{date(question.created_at)}</time></div><h3>{question.text}</h3>
-        {question.status === 'answered' && <div className="answer-meta"><Check size={15} /> Answered by {question.answered_by_name} · {date(question.answered_at)}</div>}
+      <div className="question-body"><div className="question-meta"><span>{statusText[question.status]}</span><time>{formatDateTime(question.created_at)}</time></div><h3>{question.text}</h3>
+        {question.status === 'answered' && <div className="answer-meta"><Check size={15} /> Answered by {question.answered_by_name} · {formatDateTime(question.answered_at)}</div>}
         {role === 'admin' && question.status === 'answered' && <button className="text-button" disabled={busy === question.id} onClick={event => { event.stopPropagation(); updateQuestion(question, 'unanswered') }}>Reopen</button>}
       </div>
       {!isViewer && question.status === 'unanswered' && <button className="answer-button" disabled={busy === question.id} onClick={event => { event.stopPropagation(); updateQuestion(question, 'answered') }}><Check size={17} /> {busy === question.id ? 'Updating...' : 'Answer'}</button>}
@@ -641,9 +791,19 @@ function QuestionList({ role }) {
           <h2 ref={questionTextRef} id="question-modal-title">{openQuestion.text}</h2>
         </div>
         <div className="question-modal-meta">
-          <span>Submitted {date(openQuestion.created_at)}</span>
-          {openQuestion.status === 'answered' && <span>Answered by {openQuestion.answered_by_name} · {date(openQuestion.answered_at)}</span>}
+          <span>Submitted {formatDateTime(openQuestion.created_at)}</span>
+          {openQuestion.status === 'answered' && <span>Answered by {openQuestion.answered_by_name} · {formatDateTime(openQuestion.answered_at)}</span>}
         </div>
+        {isAdmin && <section className="question-device-info" aria-label="Submission device information">
+          <h3>Submission device</h3>
+          {hasDeviceInfo
+            ? <dl>
+              {typeof deviceInfo.platform === 'string' && deviceInfo.platform && <div><dt>Platform</dt><dd>{deviceInfo.platform}</dd></div>}
+              {typeof deviceInfo.language === 'string' && deviceInfo.language && <div><dt>Language</dt><dd>{deviceInfo.language}</dd></div>}
+              {typeof deviceInfo.userAgent === 'string' && deviceInfo.userAgent && <div className="device-info-user-agent"><dt>Browser / device</dt><dd>{deviceInfo.userAgent}</dd></div>}
+            </dl>
+            : <p>Device information was not recorded for this question.</p>}
+        </section>}
         <div className="question-modal-actions">
           {!isViewer && openQuestion.status === 'unanswered' && <button className="answer-button" disabled={busy === openQuestion.id} onClick={() => updateQuestion(openQuestion, 'answered')}><Check size={18} /> {busy === openQuestion.id ? 'Updating…' : 'Mark answered'}</button>}
           {isAdmin && openQuestion.status === 'answered' && <button className="secondary-button" disabled={busy === openQuestion.id} onClick={() => updateQuestion(openQuestion, 'unanswered')}>Reopen question</button>}
@@ -657,6 +817,8 @@ function QuestionList({ role }) {
 function AdminPortal() {
   const [moderators, setModerators] = useState([])
   const [logs, setLogs] = useState([])
+  const [hasMoreLogs, setHasMoreLogs] = useState(false)
+  const [loadingMoreLogs, setLoadingMoreLogs] = useState(false)
   const [name, setName] = useState('')
   const [newRole, setNewRole] = useState('moderator')
   const [message, setMessage] = useState('')
@@ -685,6 +847,7 @@ function AdminPortal() {
       const result = await apiCall('listAdminData')
       setModerators(result.users || result.moderators || [])
       setLogs((result.logs || []).slice(0, 10))
+      setHasMoreLogs(Boolean(result.hasMoreLogs))
     } catch (error) {
       reportError('Could not load admin data', error)
       setMessageType('error')
@@ -694,12 +857,33 @@ function AdminPortal() {
     }
   }
   useEffect(() => { refresh() }, [])
+  const loadMoreLogs = async () => {
+    if (loadingMoreLogs || !hasMoreLogs || !logs.length) return
+    const cursor = logs[logs.length - 1]
+    setLoadingMoreLogs(true)
+    try {
+      const result = await apiCall('listMoreActivityLogs', {
+        beforeCreatedAt: cursor.created_at,
+        beforeId: String(cursor.id),
+      })
+      setLogs(current => {
+        const currentIds = new Set(current.map(log => String(log.id)))
+        return [...current, ...result.logs.filter(log => !currentIds.has(String(log.id)))]
+      })
+      setHasMoreLogs(Boolean(result.hasMoreLogs))
+    } catch (error) {
+      reportError('Could not load more activity logs', error)
+      setMessageType('error')
+      setMessage('More activity logs could not be loaded. Please try again.')
+    } finally {
+      setLoadingMoreLogs(false)
+    }
+  }
   useEffect(() => {
     const channel = supabase.channel('qroom-admin-activity-logs')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activity_logs' }, payload => {
         setLogs(current => [payload.new, ...current.filter(log => log.id !== payload.new.id)]
           .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-          .slice(0, 10)
           .map(log => ({ ...log, createdAt: log.created_at })))
       })
       .subscribe(status => {
@@ -902,7 +1086,8 @@ function AdminPortal() {
       </section>
       : <section id="admin-activity-panel" className="admin-tab-panel" role="tabpanel" aria-labelledby="admin-activity-tab">
         <h2>Recent activity</h2>
-        {loading ? <p>Loading activity...</p> : logs.slice(0, 10).map(log => <div className="log-row" key={log.id}><span>{log.action}</span><small>{log.moderator_name || log.actor_name || 'Admin'} · {log.createdAt}</small></div>)}
+        {loading ? <p>Loading activity...</p> : logs.map(log => <div className="log-row" key={log.id}><span>{log.action}</span><small>Actor: {log.actor_name || 'Admin'}{log.moderator_name && log.moderator_name !== log.actor_name ? ` · User: ${log.moderator_name}` : ''} · {formatDateTime(log.created_at || log.createdAt)}</small></div>)}
+        {!loading && hasMoreLogs && <button className="secondary-button activity-more-button" type="button" disabled={loadingMoreLogs} onClick={loadMoreLogs}>{loadingMoreLogs ? 'Loading…' : 'Load 10 more logs'}</button>}
       </section>}
     <ActionDialog dialog={dialog} onClose={() => setDialog(null)} saving={saving} />
   </main>
@@ -1011,8 +1196,13 @@ function App() {
     }
     setSession(null)
     setGlobalError('')
-    navigate('ask')
-    ensureAnonymousSession().catch(error => reportError('Could not restore anonymous access', error))
+    try {
+      await ensureAnonymousSession()
+    } catch (sessionError) {
+      reportError('Could not restore anonymous access', sessionError)
+      setGlobalError('We couldn’t restore a sign-in session. Please refresh and try again.')
+    }
+    navigate('portal')
   }
   const portalContent = session?.role === 'admin'
     ? view === 'team' ? <AdminPortal /> : view === 'qr' ? <QrStudio /> : view === 'ask' ? <AskPage /> : <QuestionList role="admin" />
